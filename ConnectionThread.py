@@ -1,6 +1,7 @@
 import threading
 from SocketHandler import SocketHandler
 
+
 class ConnectionThread(threading.Thread):
     '''
     this class must be imported by Proxy module

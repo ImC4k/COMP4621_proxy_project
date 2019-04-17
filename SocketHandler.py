@@ -49,14 +49,19 @@ class SocketHandler:
     def handleRequest(self):
         while not self.timeout:
             requestRaw = self.socket.recv(SocketHandler.BUFFER_SIZE)
+            if requestRaw == b'':
+                continue
             rqp = RequestPacket.parsePacket(requestRaw)
-            print('SocketHandler:: received data: ' + rqp.getPacket()) #DEBUG
+            print('SocketHandler:: received data: \n' + rqp.getPacket('DEBUG') + '\nrequest packet end\n') #DEBUG
             rsp = self.requestToServer(rqp)
-            print('SocketHandler:: received response: ' + rsp.getPacket())
+            print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
             self.socket.send(rsp.getPacketRaw())
-
+            print('printing headers:')
+            print(str(rqp.getHeaderSplitted()))
+            print('print header splitted end')
             if rqp.getMethod().lower() == 'get':
-                self.cacheResponse(responseRaw)
+                print('caching response')
+                self.cacheResponse(rsp)
 
             if rqp.getConnection().lower() == 'close':
                 self.socket.close()

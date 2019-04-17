@@ -5,9 +5,11 @@ class ResponsePacket:
 
     Members:
 
-        __packetRaw:                            raw response packet data
+        __packetRaw:                            entire raw response packet data
 
-        __packetSplitted:                       lines of response packet, delimited by '\r\n'
+        __headerSplitted:                       entire lines of response header, delimited by '\r\n'
+
+        __payload:                              raw payload
 
         __timeout:                              integer
 
@@ -25,7 +27,9 @@ class ResponsePacket:
 
         setPacketRaw(packetRaw):                set raw packet data
 
-        setPacketSplitted(packetSplitted):      set splitted packet data
+        setHeaderSplitted(headerSplitted):      set splitted packet data
+
+        setPayload(payload):                    set payload data
 
         getTimeout():                           returns -1 if doesn't exist, else timeout in seconds
 
@@ -33,12 +37,17 @@ class ResponsePacket:
 
         getTransferEncoding():                  returns 'nil' if doesn't exist, else transfer-encoding string
 
-        getPacket():                            returns reformed packet
+        getHeaderInfo(fieldName):               (update) returns value of fieldName
+
+        getPacket():                            returns string packet
 
         getPacketRaw():                         returns raw (encoded) packet data
 
-        getData():                              returns only the payload (strip header)
+        getResponseLine():                      returns string response line
 
+        getHeader():                            returns list of string header fields
+
+        getPayload():                           returns raw payload (no header)
     '''
 
     def __init__(self):
@@ -47,7 +56,9 @@ class ResponsePacket:
         instead, should use p = ResponsePacket.parsePacket(packet)
         '''
         self.__packetRaw = ''
-        self.__packetSplitted = []
+        self.__responseLine = ''
+        self.__headerSplitted = []
+        self.__payload = ''
         self.__timeout = ''
         self.__lastModified = ''
         self.__transferEncoding = ''
@@ -57,23 +68,31 @@ class ResponsePacket:
     @classmethod
     def parsePacket(cls, packetRaw):
         rp = ResponsePacket()
-        packet = packetRaw.decode()
-        packetSplitted = packet.split('\r\n')
-        packetSplitted = packetSplitted[:-1]
-        rp.setPacketSplitted(packetSplitted)
+        headerRaw, payload = packetRaw.split(b'\r\n\r\n')
+        header = headerRaw.decode('ascii')
+        headerSplitted = header.split('\r\n')
+        rp.setResponseLine(headerSplitted[0])
+        rp.setHeaderSplitted(headerSplitted[1:])
+        rp.setPayload(payload)
         rp.setPacketRaw(packetRaw)
         return rp
 
     def setPacketRaw(self, packetRaw):
         self.__packetRaw = packetRaw
 
-    def setPacketSplitted(self, packetSplitted):
-        self.__packetSplitted = packetSplitted
+    def setHeaderSplitted(self, headerSplitted):
+        self.__headerSplitted = headerSplitted
+
+    def setResponseLine(self, responseLine):
+        self.__responseLine = responseLine
+
+    def setPayload(self, payload):
+        self.__payload = payload
 
     def getTimeout(self):
         if self.__timeout == '':
             keepAliveLine = ''
-            for ss in self.__packetSplitted:
+            for ss in self.__headerSplitted:
                 if ss[0:len('keep-alive')].lower() == 'keep-alive':
                     keepAliveLine = ss
                     break
@@ -91,7 +110,7 @@ class ResponsePacket:
     def getLastModified(self):
         if self.__lastModified == '':
             lastModifiedLine = ''
-            for ss in self.__packetSplitted:
+            for ss in self.__headerSplitted:
                 if ss[0:len('last-modified')].lower() == 'last-modified':
                     lastModifiedLine = ss
                     break
@@ -106,7 +125,7 @@ class ResponsePacket:
     def getTransferEncoding(self):
         if self.__transferEncoding == '':
             transferEncodingLine = ''
-            for ss in self.__packetSplitted:
+            for ss in self.__headerSplitted:
                 if ss[0:len('transfer-encoding')].lower() == 'transfer-encoding':
                     transferEncodingLine = ss
                     break
@@ -120,7 +139,7 @@ class ResponsePacket:
     def getCacheControl(self):
         if self.__cacheControl == '':
             cacheControlLine = ''
-            for ss in self.__packetSplitted:
+            for ss in self.__headerSplitted:
                 if ss[0:len('cache-control')].lower() == 'cache-control':
                     cacheControlLine = ss
                     break
@@ -131,15 +150,27 @@ class ResponsePacket:
                 self.__cacheControl = cacheControlLineSplitted[1]
         return self.__cacheControl
 
-    def getPacket(self):
+    def getPacket(self, option=''):
         s = ''
-        for ss in self.__packetSplitted:
+        s += self.__responseLine + '\r\n'
+        for ss in self.__headerSplitted:
             s += ss + '\r\n'
         s += '\r\n'
+        if option == 'DEBUG':
+            if self.__payload != '':
+                s += 'payload is not shown here'
+        else:
+            s += self.__payload
         return s
 
     def getPacketRaw(self):
         return self.__packetRaw
 
-    def getData(self):
-        pass
+    def getResponseLine(self):
+        return self.__responseLine
+
+    def getHeaderSplitted(self):
+        return self.__headerSplitted
+
+    def getPayload(self):
+        return self.__payload
