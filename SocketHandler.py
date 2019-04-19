@@ -1,6 +1,8 @@
 from socket import *
 from RequestPacket import RequestPacket
 from ResponsePacket import ResponsePacket
+from TimerThread import TimerThread
+from CacheHandler import CacheHandler
 
 class SocketHandler:
     '''
@@ -18,6 +20,16 @@ class SocketHandler:
 
         socket:                         socket information
 
+        timeout:                        boolean, true if timer ends
+
+        timeoutThreadID:                if thread with this ID timeout, close this connection
+
+        maxTransmission:                number of transmissions this connection can handle (default 100)
+
+        isFirstResponse:                true if first response packet, set maxTransmission, connectionType
+
+        connectionType:                 HTTP or HTTPS, allow different logistics
+
     Constructor:
 
         __init__(socket, callback):     when handleRequest() returns (connection closes),
@@ -25,50 +37,73 @@ class SocketHandler:
 
     Methods:
 
-        handleRequest(packet):          called by listen(),
+        handleRequest():                called by listen(),
                                         handle incoming client request,
                                         make request to server by requestToServer(),
                                         return response to client
 
-        requestToServer():              connect to server,
+        requestToServer(rqp):           param: (rqp : RequestPacket)
+                                        connect to server,
                                         return response packet
 
-        cacheResponse(responseRaw):     cache the response to a file
+        cacheResponse(responseRaw):     param: (responseRaw : bytes)
+                                        cache the response to a file
 
     '''
 
-    BUFFER_SIZE = 8192
+    BUFFER_SIZE = 8192 # 8KB
     HTTPS_PORT = 443
     HTTP_PORT = 80
 
     def __init__(self, socket):
-        self.socket = socket
-        self.timeout = False
+        self.__socket = socket
+        self.__timeout = False
+        self.__timeoutThreadID = -1
+        self.__maxTransmission = 100
+        self.__isFirstResponse = True
+        self.__connectionType = 'HTTP'
         print('SocketHandler:: Socket handler initialized')
 
     def handleRequest(self):
-        while not self.timeout:
-            requestRaw = self.socket.recv(SocketHandler.BUFFER_SIZE)
+        while not self.__timeout and self.__maxTransmission > 0:
+            requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE)
             if requestRaw == b'':
                 continue
             rqp = RequestPacket.parsePacket(requestRaw)
-            print('SocketHandler:: received data: \n' + rqp.getPacket('DEBUG') + '\nrequest packet end\n') #DEBUG
-            rsp = self.requestToServer(rqp)
-            print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
-            self.socket.send(rsp.getPacketRaw())
+            print('SocketHandler:: received data: \n' + rqp.getPacket('DEBUG') + '\nrequest packet end\n')
+            rsp = CacheHandler.fetchResponse(rqp)
+            if rsp is None:
+                rsp = self.requestToServer(rqp)
+                print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
+                if rsp is None:
+                    pass # TODO custom error response
+            elif rsp == 'cache-return':
+                pass # TODO custom error response
+            self.__socket.send(rsp.getPacketRaw())
             print('printing headers:')
             print(str(rqp.getHeaderSplitted()))
             print('print header splitted end')
-            if rqp.getMethod().lower() == 'get':
-                print('caching response')
-                self.cacheResponse(rsp)
+
+
+            time = rsp.getTimeout()
+            self.__timeoutThreadID += 1
+            timer = TimerThread(self.__timeoutThreadID, time, self)
+
+            if self.__isFirstResponse:
+                self.__maxTransmission = rsp.getKeepLive('max') - 1
+                if rqp.getMethod().lower() == 'connect':
+                    self.__connectionType = 'HTTPS'
+                self.__isFirstResponse = False
+
+            if rqp.getMethod().lower() == 'get' and rsp.responseCode() == '200':
+                CacheHandler.cacheResponse(rqp, rsp) # TODO open thread to cache, don't spend time on connection thread
 
             if rqp.getConnection().lower() == 'close':
-                self.socket.close()
+                self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
 
     def requestToServer(self, rqp):
-        #todo handle chunked packets
+        #TODO handle chunked packets
         serverAddr = gethostbyname(rqp.getHostName())
 
         if rqp.getMethod().lower() == 'connect':
@@ -81,9 +116,10 @@ class SocketHandler:
         serverSideSocket.send(rqp.getPacketRaw())
         responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE) # default buffer size is 8KB
         rsp = ResponsePacket.parsePacket(responseRaw)
+        # if rsp.getHeaderInfo('transfer-encoding') # TODO handle chunked data
         serverSideSocket.close()
         return rsp
 
-    def cacheResponse(self, responseRaw):
-        print('SocketHandler:: should cache the file')
-        pass
+    def setTimeout(self, id):
+        if self.__timeoutThreadID == id:
+            self.__timeout = True

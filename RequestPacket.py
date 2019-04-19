@@ -1,7 +1,6 @@
 class RequestPacket:
     '''
     process request packet
-    todo: cut by the first empty line, first half is header, the other will be data
 
     Members:
 
@@ -35,7 +34,7 @@ class RequestPacket:
 
         fixRequestLine():                           replace url with file path
 
-        getFilePath(url):                           get the path of file from url eg returns '/image1.png' from 'http://www.ust.hk/image1.png'
+        getFilePath():                              get the path of file from url eg returns '/image1.png' from 'http://www.ust.hk/image1.png'
 
         getLastModifiedRequestPacket():             returns the packet that check last modified time
 
@@ -45,7 +44,8 @@ class RequestPacket:
 
         getConnection():                            returns connection info eg keep-alive, close
 
-        getHeaderInfo(fieldName):                   (update) returns value of fieldName
+        getHeaderInfo(fieldName):                   param: (fieldName : string)
+                                                    (update) returns value of fieldName
 
         getPacket():                                returns reformed packet
 
@@ -70,6 +70,7 @@ class RequestPacket:
         self.__payload = ''
         self.__method = ''
         self.__connection = ''
+        self.__fullPath = ''
         pass
 
     @classmethod
@@ -82,6 +83,7 @@ class RequestPacket:
         rp.setHeaderSplitted(headerSplitted[1:])
         if rp.getMethod().lower() != 'connect': # file path needs to be fixed
             requestLineSplitted = headerSplitted[0].split(' ')
+            rp.setFullPath(requestLineSplitted[1])
             requestLineSplitted[1] = rp.getFilePath()
             s = ''
             for ss in requestLineSplitted:
@@ -104,6 +106,9 @@ class RequestPacket:
 
     def setPayload(self, payload):
         self.__payload = payload
+
+    def setFullPath(self, fullPath):
+        self.__fullPath = fullPath
 
     def fixRequestLine(self):
         '''
@@ -157,14 +162,24 @@ class RequestPacket:
         if self.__connection == '':
             connectionLine = ''
             for ss in self.__headerSplitted:
-                # print('DEBUG: ' + ss[0:len('Connection')])
-                if ss[0:len('Connection')].lower() == 'connection':
+                if ss[0:len('connection')].lower() == 'connection':
                     connectionLine = ss
                     break
             connectionLineSplitted = connectionLine.split(' ')
             print('RequestPacket:: connectionLineSplitted: ' + str(connectionLineSplitted))
             self.__connection = connectionLineSplitted[1]
         return self.__connection
+
+    def getHeaderInfo(self, fieldName):
+        line = ''
+        for ss in self.__headerSplitted:
+            if ss[0:len(fieldName)].lower() == fieldName:
+                line = ss
+                break
+        if line == '':
+            return 'nil'
+        else:
+            return line[len(fieldName) + 2 :] # strip 'fieldName: '
 
 
     def getPacket(self, option=''):
@@ -191,3 +206,6 @@ class RequestPacket:
 
     def getPayload(self):
         return self.__payload
+
+    def getFullPath(self):
+        return self.__fullPath

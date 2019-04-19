@@ -30,7 +30,8 @@ class Proxy:
 
         getFreeIndex():                 loop through freeIndexArr to get a free spot for next client connection
 
-        setFreeIndex(idx, flag):        set freeIndexArr[idx] to flag
+        setFreeIndex(idx, flag):        param: (idx : uint, flag : bool)
+                                        set freeIndexArr[idx] to flag
 
         listenConnection:               start listening to proxyPort, accept connections
 
