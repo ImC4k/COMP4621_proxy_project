@@ -114,8 +114,8 @@ class CacheHandler:
                 if entries[idx][encoding] == 'True':
                     try:
                         with open(CacheHandler.cacheFileDirectory + fullPath + ', ' + encoding, 'r') as responseFile:
-                            response = response.read()
-                        return response
+                            responseRaw = response.read()
+                        return ResponsePacket.parsePacket(responseRaw)
                     except Exception as e:
                         raise e
             if entries[idx]['uncompressed'] == 'True': # last check if uncompressed file exists

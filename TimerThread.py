@@ -1,6 +1,6 @@
 import threading
 from time import sleep
-# NOTE: no need to import SocketHandler here, otherwise it will cause a cycle
+# no need to import SocketHandler here, otherwise it will cause a cycle
 
 class TimerThread(threading.Thread):
     '''

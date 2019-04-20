@@ -1,3 +1,5 @@
+from RequestPacket import RequestPacket
+
 class ResponsePacket:
     '''
     process response packet
@@ -31,11 +33,14 @@ class ResponsePacket:
 
         setPayload(payload):                    set payload data
 
-        getTimeout():                           returns -1 if doesn't exist, else timeout in seconds
+        modifyTime(time):                       change the date field to ${time}
 
-        getLastModified():                      returns 'nil' if doesn't exist, else last-modified string
+        responseCode():                         returns string response code
 
-        getTransferEncoding():                  returns 'nil' if doesn't exist, else transfer-encoding string
+        getKeepLive(option=''):                 returns keep-alive field value
+                                                option: timeout or max
+                                                returns corresponding value
+                                                return 'nil' if keep-alive is not present in packet
 
         getHeaderInfo(fieldName):               param: (fieldName : string)
                                                 (update) returns value of fieldName
@@ -49,11 +54,6 @@ class ResponsePacket:
         getHeader():                            returns list of string header fields
 
         getPayload():                           returns raw payload (no header)
-
-        getKeepLive(option=''):                 returns keep-alive field value
-                                                option: timeout or max
-                                                returns corresponding value
-                                                return 'nil' if keep-alive is not present in packet
     '''
 
     def __init__(self):
@@ -84,6 +84,21 @@ class ResponsePacket:
         rp.setPacketRaw(packetRaw)
         return rp
 
+    @classmethod
+    def emptyPacket(cls, rqp):
+        '''
+        format:
+        HTTP/1.1 404 Not Found
+        Date: Wed, 17 Apr 2019 13:31:51 GMT
+        Server: Apache
+        Content-Length: 209
+        Keep-Alive: timeout=5, max=100
+        Connection: Keep-Alive
+        Content-Type: text/html; charset=iso-8859-1
+        '''
+        rp = ResponsePacket()
+
+
     def setPacketRaw(self, packetRaw):
         self.__packetRaw = packetRaw
 
@@ -95,6 +110,18 @@ class ResponsePacket:
 
     def setPayload(self, payload):
         self.__payload = payload
+
+    def modifyTime(self, time):
+        index = -1 # line index where header field key is 'date'
+        for idx in len(self.__headerSplitted):
+            if self.__headerSplitted[idx][0:len('date')].lower() == 'date':
+                index = idx
+                break
+        if index == -1: # originally no such field, append to headerSplitted
+            self.__headerSplitted.append('date: ' + time)
+        else:
+            self.__headerSplitted[index] = 'date: ' + time
+        self.setPacketRaw(self.getPacket().encode('ascii'))
 
     def responseCode(self):
         if self.__responseCode == '':

@@ -36,7 +36,7 @@ class RequestPacket:
 
         getFilePath():                              get the path of file from url eg returns '/image1.png' from 'http://www.ust.hk/image1.png'
 
-        getLastModifiedRequestPacket():             returns the packet that check last modified time
+        modifyTime(time):                           change the if-modified-since field to ${time}
 
         getHostName():                              returns server host name
 
@@ -134,8 +134,17 @@ class RequestPacket:
         print('RequestPacket:: filePath requested is: ' + filePath) # '/success.txt'
         return filePath
 
-    def getLastModifiedRequestPacket(self):
-        pass
+    def modifyTime(self, time):
+        index = -1 # line index where header field key is 'if-modified-since'
+        for idx in len(self.__headerSplitted):
+            if self.__headerSplitted[idx][0:len('if-modified-since')].lower() == 'if-modified-since':
+                index = idx
+                break
+        if index == -1: # originally no such field, append to headerSplitted
+            self.__headerSplitted.append('if-modified-since: ' + time)
+        else:
+            self.__headerSplitted[index] = 'if-modified-since: ' + time
+        self.setPacketRaw(self.getPacket().encode('ascii'))
 
     def getHostName(self):
         # hostLineSplitted = self.__headerSplitted[1].split(' ') # assumed host must be the second line

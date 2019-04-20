@@ -61,7 +61,7 @@ class SocketHandler:
         self.__timeoutThreadID = -1
         self.__maxTransmission = 100
         self.__isFirstResponse = True
-        self.__connectionType = 'HTTP'
+        # self.__connectionType = 'HTTP'
         print('SocketHandler:: Socket handler initialized')
 
     def handleRequest(self):
@@ -71,54 +71,116 @@ class SocketHandler:
                 continue
             rqp = RequestPacket.parsePacket(requestRaw)
             print('SocketHandler:: received data: \n' + rqp.getPacket('DEBUG') + '\nrequest packet end\n')
-            rsp = CacheHandler.fetchResponse(rqp)
-            if rsp is None:
+            if rqp.getMethod().lower() == 'connect':
+                self.establishHTTPSConnection(rqp)
+                return
+            elif rqp.getMethod().lower() == 'get': # follow draft semantics
+                fetchedResponse = CacheHandler.fetchResponse(rqp)
+                if fetchedResponse == 'nil': # no cache found
+                    rsp = self.requestToServer(rqp)
+                    print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
+                    if rsp.responseCode() == '200':
+                        CacheHandler.cacheResponse(rqp, rsp) # TODO should be handled by thread
+                    self.__socket.send(rsp.getPacketRaw())
+                else: # cache response found
+                    rqpTime = rqp.getHeaderInfo('if-modified-since')
+                    if rqpTime == 'nil':
+                        # forgeTime = fetchedResponse.getHeaderInfo('date')
+                        rqp.modifyTime(fetchedResponse.getHeaderInfo('date'))
+                        rsp = self.requestToServer(rqp)
+                        if rsp.responseCode() == '200':
+                            CacheHandler.cacheResponse(rqp, rsp) # TODO should be handled by thread
+                            self.__socket.send(rsp)
+                        elif rsp.responseCode() == '304':
+                            fetchedResponse.modifyTime(rsp.getHeaderInfo('date'))
+                            self.__socket.send(fetchedResponse)
+                        else:
+                            self.__socket.send(rsp)
+                    else:
+                        rqpTime = TimeComparator(rqpTime)
+                        fetchTime = TimeComparator(fetchResponse.getHeaderInfo('date'))
+                        if rqpTime > fetchTime:
+                            rsp = self.requestToServer(rqp)
+                            if rsp.responseCode() == '200':
+                                CacheHandler.cacheResponse(rqp, rsp) # TODO should be handled by thread
+                            self.__socket.send(rsp)
+                        else: # fetchTime > rqpTime
+                            rqp.modifyTime(fetchTime)
+                            rsp = self.requestToServer(rqp)
+                            if rsp.responseCode() == '200':
+                                CacheHandler.cacheResponse(rqp, rsp) # TODO should be handled by thread
+                                self.__socket.send(rsp)
+                            elif rsp.responseCode() == '304':
+                                fetchedResponse.modifyTime(rsp.getHeaderInfo('date'))
+                                CacheHandler.cacheResponse(rqp, fetchedResponse) # TODO should be handled by thread
+                                self.__socket.send(fetchedResponse)
+                            elif rsp.responseCode() == '404':
+                                CacheHandler.deleteFromCache(rqp, rsp) # TODO should be handled by thread
+                                self.__socket.send(rsp)
+                            else:
+                                self.__socket.send(rsp)
+
+            else: # not GET nor CONNECT, request from server and reply to client, no caching required
                 rsp = self.requestToServer(rqp)
-                print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
                 if rsp is None:
-                    pass # TODO custom error response
-            elif rsp == 'cache-return':
-                pass # TODO custom error response
-            self.__socket.send(rsp.getPacketRaw())
-            print('printing headers:')
-            print(str(rqp.getHeaderSplitted()))
-            print('print header splitted end')
+                    rsp = ResponsePacket.emptyPacket()
+                self.__socket.send(rsp.getPacketRaw())
 
 
             time = rsp.getTimeout()
             self.__timeoutThreadID += 1
             timer = TimerThread(self.__timeoutThreadID, time, self)
+            timer.start()
 
             if self.__isFirstResponse:
                 self.__maxTransmission = rsp.getKeepLive('max') - 1
-                if rqp.getMethod().lower() == 'connect':
-                    self.__connectionType = 'HTTPS'
+                # if rqp.getMethod().lower() == 'connect':
+                #     self.__connectionType = 'HTTPS'
                 self.__isFirstResponse = False
 
-            if rqp.getMethod().lower() == 'get' and rsp.responseCode() == '200':
-                CacheHandler.cacheResponse(rqp, rsp) # TODO open thread to cache, don't spend time on connection thread
+            # if rqp.getMethod().lower() == 'get' and rsp.responseCode() == '200':
+            #     CacheHandler.cacheResponse(rqp, rsp) # open thread to cache, don't spend time on connection thread
 
             if rqp.getConnection().lower() == 'close':
                 self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
 
     def requestToServer(self, rqp):
-        #TODO handle chunked packets
         serverAddr = gethostbyname(rqp.getHostName())
 
-        if rqp.getMethod().lower() == 'connect':
-            serverPort = SocketHandler.HTTPS_PORT
-        else:
-            serverPort = SocketHandler.HTTP_PORT
+        # if rqp.getMethod().lower() == 'connect':
+        #     serverPort = SocketHandler.HTTPS_PORT
+        # else:
+        #     serverPort = SocketHandler.HTTP_PORT
+        serverPort = SocketHandler.HTTP_PORT
 
         serverSideSocket = socket(AF_INET, SOCK_STREAM)
         serverSideSocket.connect((serverAddr, serverPort))
         serverSideSocket.send(rqp.getPacketRaw())
-        responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE) # default buffer size is 8KB
+        responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE)
+        if responseRaw is None:
+            serverSideSocket.close()
+            return None
         rsp = ResponsePacket.parsePacket(responseRaw)
-        # if rsp.getHeaderInfo('transfer-encoding') # TODO handle chunked data
+        if rsp.getHeaderInfo('transfer-encoding').lower() == 'chunked': # TODO handle chunked data
+            pass
         serverSideSocket.close()
         return rsp
+
+    def establishHTTPSConnection(self, rqp):
+        serverAddr = gethostbyname(rqp.getHostName())
+        serverPort = SocketHandler.HTTPS_PORT
+        serverSideSocket = socket(AF_INET, SOCK_STREAM)
+        serverSideSocket.connect((serverAddr, serverPort))
+        serverSideSocket.send(rqp.getPacketRaw())
+        responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE)
+        rsp = ResponsePacket.parsePacket(responseRaw)
+        print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
+
+        self.__socket.send(responseRaw)
+        while True: # TODO
+            print('loop until end connection')
+            break
 
     def setTimeout(self, id):
         if self.__timeoutThreadID == id:
