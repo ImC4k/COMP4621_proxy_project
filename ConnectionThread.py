@@ -23,7 +23,7 @@ class ConnectionThread(threading.Thread):
         run():                      start socketHandler
                                     when finish, set Proxy.freeIndexArr[idx] to be free (True)
     '''
-    
+
     def __init__(self, socket, idx):
         threading.Thread.__init__(self)
         self.socketHandler = SocketHandler(socket)
