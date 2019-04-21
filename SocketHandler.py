@@ -3,6 +3,7 @@ from RequestPacket import RequestPacket
 from ResponsePacket import ResponsePacket
 from TimerThread import TimerThread
 from CacheHandler import CacheHandler
+from TimeComparator import TimeComparator
 
 class SocketHandler:
     '''
@@ -76,15 +77,16 @@ class SocketHandler:
                 return
             elif rqp.getMethod().lower() == 'get': # follow draft semantics
                 fetchedResponse = CacheHandler.fetchResponse(rqp)
-                if fetchedResponse == 'nil': # no cache found
+                if fetchedResponse is None: # no cache found
                     rsp = self.requestToServer(rqp)
                     print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
                     if rsp.responseCode() == '200':
                         CacheHandler.cacheResponse(rqp, rsp) # TODO should be handled by thread
                     self.__socket.send(rsp.getPacketRaw())
                 else: # cache response found
-                    rqpTime = rqp.getHeaderInfo('if-modified-since')
-                    if rqpTime == 'nil':
+                    rqpTimeLine = rqp.getHeaderInfo('if-modified-since')
+                    print(rqpTimeLine)
+                    if rqpTimeLine == 'nil':
                         # forgeTime = fetchedResponse.getHeaderInfo('date')
                         rqp.modifyTime(fetchedResponse.getHeaderInfo('date'))
                         rsp = self.requestToServer(rqp)
@@ -97,8 +99,8 @@ class SocketHandler:
                         else:
                             self.__socket.send(rsp)
                     else:
-                        rqpTime = TimeComparator(rqpTime)
-                        fetchTime = TimeComparator(fetchResponse.getHeaderInfo('date'))
+                        rqpTime = TimeComparator(rqpTimeLine)
+                        fetchTime = TimeComparator(fetchedResponse.getHeaderInfo('date'))
                         if rqpTime > fetchTime:
                             rsp = self.requestToServer(rqp)
                             if rsp.responseCode() == '200':
@@ -127,13 +129,13 @@ class SocketHandler:
                 self.__socket.send(rsp.getPacketRaw())
 
 
-            time = rsp.getTimeout()
+            time = rsp.getKeepLive('timeout')
             self.__timeoutThreadID += 1
-            timer = TimerThread(self.__timeoutThreadID, time, self)
+            timer = TimerThread(self.__timeoutThreadID, int(time), self)
             timer.start()
 
             if self.__isFirstResponse:
-                self.__maxTransmission = rsp.getKeepLive('max') - 1
+                self.__maxTransmission = int(rsp.getKeepLive('max')) - 1
                 # if rqp.getMethod().lower() == 'connect':
                 #     self.__connectionType = 'HTTPS'
                 self.__isFirstResponse = False

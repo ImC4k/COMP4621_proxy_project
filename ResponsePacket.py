@@ -75,12 +75,18 @@ class ResponsePacket:
     @classmethod
     def parsePacket(cls, packetRaw):
         rp = ResponsePacket()
-        headerRaw, payload = packetRaw.split(b'\r\n\r\n')
+        packetRawSplitted = packetRaw.split(b'\r\n\r\n') # TODO not enough values to unpack error
+        if len(packetRawSplitted) == 1:
+            headerRaw = packetRawSplitted[0]
+        elif len(packetRawSplitted) == 2:
+            headerRaw, payload = packetRawSplitted
+            rp.setPayload(payload)
+        else:
+            print('RequestPacket:: strange number of values unpacket: ' + str(len(packetRawSplitted)))
         header = headerRaw.decode('ascii')
         headerSplitted = header.split('\r\n')
         rp.setResponseLine(headerSplitted[0])
         rp.setHeaderSplitted(headerSplitted[1:])
-        rp.setPayload(payload)
         rp.setPacketRaw(packetRaw)
         return rp
 
@@ -176,7 +182,7 @@ class ResponsePacket:
         if option == 'DEBUG':
             if self.__payload != '':
                 s += 'payload is not shown here'
-        else:
+        elif option != 'HEADER_ONLY':
             s += self.__payload
         return s
 

@@ -8,6 +8,8 @@ class RequestPacket:
 
         __requestLine:                              request line, first line of the header
 
+        __filePath:                                 filePath of packet
+
         __headerSplitted:                           header fields of request packet, delimited by '\r\n'
 
         __payload:                                  raw payload
@@ -66,6 +68,7 @@ class RequestPacket:
         # print('enter default constructor')
         self.__packetRaw = ''
         self.__requestLine = ''
+        self.__filePath = ''
         self.__headerSplitted = []
         self.__payload = ''
         self.__method = ''
@@ -76,7 +79,14 @@ class RequestPacket:
     @classmethod
     def parsePacket(cls, packetRaw):
         rp = RequestPacket()
-        headerRaw, payload = packetRaw.split(b'\r\n\r\n')
+        packetRawSplitted = packetRaw.split(b'\r\n\r\n') # TODO not enough values to unpack error
+        if len(packetRawSplitted) == 1:
+            headerRaw = packetRawSplitted[0]
+        elif len(packetRawSplitted) == 2:
+            headerRaw, payload = packetRawSplitted
+            rp.setPayload(payload)
+        else:
+            print('RequestPacket:: strange number of values unpacket: ' + str(len(packetRawSplitted)))
         header = headerRaw.decode('ascii')
         headerSplitted = header.split('\r\n')
         rp.setRequestLine(headerSplitted[0])
@@ -89,7 +99,7 @@ class RequestPacket:
             for ss in requestLineSplitted:
                 s += ss + ' '
             rp.setRequestLine(s[:-1]) # drop the last extra space character
-            rp.setPacketRaw(rp.getPacket().encode('ascii'))
+            rp.setPacketRaw(rp.getPacket('HEADER_ONLY').encode('ascii') + rp.getPayload())
         else:
             rp.setPacketRaw(packetRaw)
 
@@ -125,14 +135,18 @@ class RequestPacket:
         '''
         assumed incoming packet is HTTP ie 2nd field starts with http://
         '''
-        requestLineSplitted = self.__requestLine.split(' ')
-        url = requestLineSplitted[1]
-        while url[0] != '/' or url[1] == '/':
-            url = url[1:] # shift one character until '/detectportal.firefox.com/success.txt'
-        url = url[1:] # shift one more time to 'detectportal.firefox.com/success.txt'
-        filePath = url[len(self.getHostName()):]
-        print('RequestPacket:: filePath requested is: ' + filePath) # '/success.txt'
-        return filePath
+        if self.__filePath == '':
+            requestLineSplitted = self.__requestLine.split(' ')
+            url = requestLineSplitted[1]
+            while url[0] != '/' or url[1] == '/':
+                url = url[1:] # shift one character until '/detectportal.firefox.com/success.txt'
+            url = url[1:] # shift one more time to 'detectportal.firefox.com/success.txt'
+            filePath = url[len(self.getHostName()):]
+            print('RequestPacket:: filePath requested is: ' + filePath) # '/success.txt'
+            self.__filePath = filePath
+            return filePath
+        else:
+            return self.__filePath
 
     def modifyTime(self, time):
         index = -1 # line index where header field key is 'if-modified-since'
@@ -200,7 +214,7 @@ class RequestPacket:
         if option == 'DEBUG':
             if self.__payload != '':
                 s += 'payload is not shown here'
-        else:
+        elif option != 'HEADER_ONLY':
             s += self.__payload
         return s
 

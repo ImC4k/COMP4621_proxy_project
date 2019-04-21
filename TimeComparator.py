@@ -4,7 +4,7 @@ class TimeComparator:
     format: Sat, 30 Mar 2019 12:30:18 GMT
     '''
 
-    def __init__(time):
+    def __init__(self, time):
         months = {
             'Jan' : 1,
             'Feb' : 2,

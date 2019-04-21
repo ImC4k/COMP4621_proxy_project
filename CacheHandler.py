@@ -2,7 +2,6 @@ import json # for cache_lookup_table
 import os # remove file os.remove(filename)
 from RequestPacket import RequestPacket
 from ResponsePacket import ResponsePacket
-from TimeComparator import TimeComparator
 
 class CacheHandler:
     '''
@@ -50,28 +49,33 @@ class CacheHandler:
     cacheFileDirectory = 'cache_responses/'
 
     @staticmethod
-    def cacheResponse(rqp, rsp):
+    def cacheResponse(rqp, rsp): # TODO fix cache response file name
         '''
         assumed request method is GET
         '''
         cacheOption = rsp.getHeaderInfo('cache-control').lower()
         if cacheOption == 'public' or cacheOption == 'nil': # specified as public or the header field is not present
-            fullPath = rqp.getFullPath()
+            # fullPath = rqp.getFullPath() # for cache entry
+            cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half
             encoding = rsp.getHeaderInfo('content-encoding')
-            if encoding == 'nil':
-                encoding = 'uncompressed'
-            cacheFileName = CacheHandler.cacheFileDirectory + fullPath + ', ' + encoding
+            cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding
+            print('CacheHandler:: cacheFileName: ' + cacheFileName)
+            origin = os.getcwd()
+            for index in range(len(cacheFileNameSplitted) - 1): # ensure layers of directory exists
+                try:
+                    os.chdir(cacheFileNameSplitted[index])
+                except FileNotFoundError as e:
+                    os.mkdir(cacheFileNameSplitted[index])
+                    os.chdir(cacheFileNameSplitted[index])
+            os.chdir(origin) # go back to project root
             try:
-                cacheFile = open(cacheFileName, 'w')
-                cacheFile.write(rsp.getPacketRaw())
-            except FileNotFoundError as e: # no directory found, create directory and retry
-                os.mkdir(CacheHandler.cacheFileDirectory)
-                cacheFile = open(cacheFileName, 'w')
-                cacheFile.write(rsp.getPacketRaw())
+                with open(cacheFileName, 'wb') as cacheFile: # write as byte
+                    cacheFile.write(rsp.getPacketRaw())
             except Exception as e:
                 raise e
             try:
-                CacheHandler.__updateLookup('ADD', fullPath, encoding)
+                # CacheHandler.__updateLookup('ADD', fullPath, encoding)
+                CacheHandler.__updateLookup('ADD', cacheFileNameFH, encoding)
             except Exception as e:
                 raise e
         else:
@@ -80,16 +84,15 @@ class CacheHandler:
     @staticmethod
     def fetchResponse(rqp):
         if rqp.getMethod().lower() == 'get':
-            fullPath = rqp.getFullPath()
+            # fullPath = rqp.getFullPath()
+            cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
 
             try:
                 with open('cache_lookup_table.json', 'r') as table:
                     entries = json.load(table)
-            except FileNotFoundError as e:
+            except Exception as e: # unable to open, meaning no such table, thus no cache
                 return None
-            except Exception as e:
-                return None
-            idx = CacheHandler.__entryExists(fullPath, entries)
+            idx = CacheHandler.__entryExists(cacheFileNameFH, entries) # check cache entry
             if idx == -1: # no entry of such file exists
                 return None
             encodings = rqp.getHeaderInfo('accept-encoding')
@@ -98,33 +101,43 @@ class CacheHandler:
             encodingsSplitted = encodings.split(', ')
             for encoding in encodingsSplitted:
                 if encoding == '*': # accept any encoding
-                    for encoding in entries[idx]:
-                        if encoding == 'fullPath':
+                    for encoding in entries[idx]: # loop through key value pairs for the entry
+                        if encoding == 'cacheFileNameFH':
                             continue
-                        if entries[idx][key] == 'True':
+                        if entries[idx][encoding] == 'True':
                             try:
-                                with open(CacheHandler.cacheFileDirectory + fullPath + ', ' + encoding, 'r') as responseFile:
-                                    response = response.read()
-                                return response
+                                # cacheFileNameFH = entries[idx]['cacheFileNameFH']
+                                # fullPathSplitted = fullPath.split('//')
+                                # if len(fullPathSplitted) == 1:
+                                #     cacheFileNameFH = fullPathSplitted[0] # cache file name first half (without encoding)
+                                # elif len(fullPathSplitted) == 2:
+                                #     cacheFileNameFH = fullPathSplitted[1]
+                                # else:
+                                #     print('CacheHandler:: fetchResponse() unknown splitting with length: ' + str(len(fullPathSplitted)))
+                                #     return None
+                                with open(CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding, 'r') as responseFile:
+                                    responseRaw = responseFile.read()
+                                return ResponsePacket.parsePacket(responseRaw)
                             except Exception as e:
                                 raise e
                     print('this line should not appear') # there should exist an entry for the fullPath, somethin's wrong
                     raise Exception('could not find entry that should be present')
-                    return None
-                if entries[idx][encoding] == 'True':
+
+                if entries[idx][encoding] == 'True': # encoding specified is not '*'
                     try:
-                        with open(CacheHandler.cacheFileDirectory + fullPath + ', ' + encoding, 'r') as responseFile:
+                        with open(CacheHandler.cacheFileDirectory + cacheFileNameFH+ ', ' + encoding, 'r') as responseFile:
                             responseRaw = response.read()
                         return ResponsePacket.parsePacket(responseRaw)
                     except Exception as e:
-                        raise e
-            if entries[idx]['uncompressed'] == 'True': # last check if uncompressed file exists
-                try:
-                    with open(CacheHandler.cacheFileDirectory + fullPath + ', ' + 'uncompressed', 'r') as responseFile:
-                        response = response.read()
-                    return response
-                except Exception as e:
-                    raise e
+                        raise Exception('could not find entry that should be present')
+
+            # if entries[idx]['uncompressed'] == 'True': # last check if uncompressed file exists
+            #     try:
+            #         with open(CacheHandler.cacheFileDirectory + fullPath + ', ' + 'uncompressed', 'r') as responseFile:
+            #             response = response.read()
+            #         return response
+            #     except Exception as e:
+            #         raise e
         else:
             pass # fetching from cache only applies to GET method
             return None
@@ -133,22 +146,25 @@ class CacheHandler:
     def deleteFromCache(rqp, rsp):
         cacheOption = rsp.getHeaderInfo('cache-control').lower()
         if cacheOption == 'public':
-            fullPath = rqp.getFullPath()
-            encoding = rsp.getHeaderInfo('accept-encoding')
-            cacheFileName = CacheHandler.cacheFileDirectory + fullPath + ', ' + encoding
+            # fullPath = rqp.getFullPath()
+            cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
+            encoding = rsp.getHeaderInfo('content-encoding')
+            # cacheFileName = CacheHandler.cacheFileDirectory + fullPath + ', ' + encoding
+            cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding
             try:
-                os.remove(CacheHandler.cacheFileDirectory + fullPath + ', ' + encoding)
+                # os.remove(CacheHandler.cacheFileDirectory + fullPath + ', ' + encoding)
+                os.remove(cacheFileName)
             except Exception as e:
                 raise Exception('CacheHandler:: deleteFromCache(): attempted to delete non-existing file')
             try:
-                __updateLookup('DEL', fullPath, encoding)
+                __updateLookup('DEL', cacheFileNameFH, encoding)
             except Exception as e:
                 raise e
         else:
             pass # nothing to delete
 
     @staticmethod
-    def __updateLookup(method, fullPath, encoding):
+    def __updateLookup(method, cacheFileNameFH, encoding):
         '''
         ADD: add record/ entry to lookup table
         DEL: delete record/ entry from lookup table
@@ -161,15 +177,15 @@ class CacheHandler:
         except Exception as e:
             raise e
 
-        idx = __entryExists(fullPath, entries)
+        idx = CacheHandler.__entryExists(cacheFileNameFH, entries)
 
         if method == 'ADD':
             if idx == -1: # no existing entry found
-                newEntry = __generateJSON(fullPath) # create new entry
+                newEntry = CacheHandler.__generateJSON(cacheFileNameFH) # create new entry
                 try:
-                    entries[idx].update({encoding : "True"})
+                    newEntry.update({encoding : "True"})
                 except Exception as e:
-                    entries[idx].add({encoding : "True"})
+                    newEntry.add({encoding : "True"})
                 entries.append(newEntry)
             else: # entry found
                 try:
@@ -183,12 +199,12 @@ class CacheHandler:
                 deleteEntryFlag = True
                 entries[idx].update({encoding : "False"})
                 for encoding in entries[idx]: # if there exists a record with an encoding stored in cache, no need to delete
-                    if encoding == 'fullPath':
+                    if encoding == 'cacheFileNameFH':
                         continue
                     if entries[idx][encoding] == 'True':
                         deleteEntryFlag = False
                         break
-                if deleteEntryFlag: # no more cached response for this fullPath
+                if deleteEntryFlag: # no more cached response for this cacheFileNameFH
                     del entries[idx]
         else:
             print('CacheHandler:: __updateLookup(): invalid method: ' + method)
@@ -205,16 +221,16 @@ class CacheHandler:
             json.dump(entries, table, indent=4)
 
     @staticmethod
-    def __entryExists(fullPath, entries):
+    def __entryExists(cacheFileNameFH, entries):
         for idx in range(len(entries)):
-            if entries[idx]['fullPath'] == fullPath:
+            if entries[idx]['cacheFileNameFH'] == cacheFileNameFH:
                 return idx
         return -1
 
     @staticmethod
-    def __generateJSON(fullPath):
+    def __generateJSON(cacheFileNameFH):
         object = {
-            "fullPath" : fullPath,
+            "cacheFileNameFH" : cacheFileNameFH,
             "gzip" : "False",
             "compress" : "False",
             "deflate" : "False",
@@ -223,3 +239,16 @@ class CacheHandler:
             "uncompressed" : "False"
         }
         return object
+
+    @staticmethod
+    def __getCacheFileNameFH(rqp):
+        # encoding = rsp.getHeaderInfo('content-encoding')
+        # if encoding == 'nil':
+        #     encoding = 'uncompressed'
+        cacheFileNameSplitted = [rqp.getHostName()]
+        if rqp.getFilePath() != '/':
+            filePathSplitted = rqp.getFilePath().split('/')
+            for subPath in filePathSplitted:
+                cacheFileNameSplitted.append(subPath)
+        cacheFileNameFH = ''.join(cacheFileNameSplitted)
+        return cacheFileNameFH, cacheFileNameSplitted
