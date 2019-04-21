@@ -26,7 +26,7 @@ class RequestPacket:
 
     Functions:
 
-        setPacketRaw(packetRaw):                    set raw packet data
+        setPacketRaw(packetRaw):                    (deleted) set raw packet data
 
         setHeaderSplitted(headerSplitted):          set splitted packet data (header fields only)
 
@@ -66,7 +66,6 @@ class RequestPacket:
         instead, should use p = RequestPacket.parsePacket(packet)
         '''
         # print('enter default constructor')
-        self.__packetRaw = ''
         self.__requestLine = ''
         self.__filePath = ''
         self.__headerSplitted = []
@@ -78,6 +77,9 @@ class RequestPacket:
 
     @classmethod
     def parsePacket(cls, packetRaw):
+        print('RequestPacket:: received packet:')
+        print(packetRaw)
+        print('\n\n')
         rp = RequestPacket()
         packetRawSplitted = packetRaw.split(b'\r\n\r\n') # TODO not enough values to unpack error
         if len(packetRawSplitted) == 1:
@@ -99,14 +101,14 @@ class RequestPacket:
             for ss in requestLineSplitted:
                 s += ss + ' '
             rp.setRequestLine(s[:-1]) # drop the last extra space character
-            rp.setPacketRaw(rp.getPacket('HEADER_ONLY').encode('ascii') + rp.getPayload())
-        else:
-            rp.setPacketRaw(packetRaw)
+        #     rp.setPacketRaw(rp.getPacket('HEADER_ONLY').encode('ascii') + rp.getPayload())
+        # else:
+        #     rp.setPacketRaw(packetRaw)
 
         return rp
 
-    def setPacketRaw(self, packetRaw):
-        self.__packetRaw = packetRaw
+    # def setPacketRaw(self, packetRaw):
+    #     self.__packetRaw = packetRaw
 
     def setHeaderSplitted(self, headerSplitted):
         self.__headerSplitted = headerSplitted
@@ -150,7 +152,7 @@ class RequestPacket:
 
     def modifyTime(self, time):
         index = -1 # line index where header field key is 'if-modified-since'
-        for idx in len(self.__headerSplitted):
+        for idx in range(len(self.__headerSplitted)):
             if self.__headerSplitted[idx][0:len('if-modified-since')].lower() == 'if-modified-since':
                 index = idx
                 break
@@ -158,7 +160,7 @@ class RequestPacket:
             self.__headerSplitted.append('if-modified-since: ' + time)
         else:
             self.__headerSplitted[index] = 'if-modified-since: ' + time
-        self.setPacketRaw(self.getPacket().encode('ascii'))
+        # self.setPacketRaw(self.getPacket().encode('ascii'))
 
     def getHostName(self):
         # hostLineSplitted = self.__headerSplitted[1].split(' ') # assumed host must be the second line
@@ -169,10 +171,10 @@ class RequestPacket:
                 break
         hostLineSplitted = hostLine.split(' ')
         if self.getMethod() == 'CONNECT':
-            print('RequestPacket:: host is ' + hostLineSplitted[1][:-len(':443')])
+            print('\n\n\n\n\n\n\nRequestPacket:: host is ' + hostLineSplitted[1][:-len(':443')])
             return hostLineSplitted[1][:-len(':443')]
         else:
-            print('RequestPacket:: host is ' + hostLineSplitted[1])
+            print('\n\n\n\n\n\n\nRequestPacket:: host is ' + hostLineSplitted[1])
             return hostLineSplitted[1]
 
     def getMethod(self):
@@ -189,7 +191,7 @@ class RequestPacket:
                     connectionLine = ss
                     break
             connectionLineSplitted = connectionLine.split(' ')
-            print('RequestPacket:: connectionLineSplitted: ' + str(connectionLineSplitted))
+            # print('RequestPacket:: connectionLineSplitted: ' + str(connectionLineSplitted))
             self.__connection = connectionLineSplitted[1]
         return self.__connection
 
@@ -219,7 +221,12 @@ class RequestPacket:
         return s
 
     def getPacketRaw(self):
-        return self.__packetRaw
+        # request line, header splitted, payload
+        packetRaw = self.__requestLine.encode('ascii') + b'\r\n'
+        for ss in self.__headerSplitted:
+            packetRaw += ss.encode('ascii') + b'\r\n'
+        packetRaw += b'\r\n' + self.__payload
+        return packetRaw
 
     def getRequestLine(self):
         return self.__requestLine

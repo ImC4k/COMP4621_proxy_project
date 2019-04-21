@@ -61,6 +61,12 @@ class CacheHandler:
             cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding
             print('CacheHandler:: cacheFileName: ' + cacheFileName)
             origin = os.getcwd()
+            try:
+                os.chdir(CacheHandler.cacheFileDirectory)
+            except FileNotFoundError as e:
+                os.mkdir(CacheHandler.cacheFileDirectory)
+                os.chdir(CacheHandler.cacheFileDirectory)
+
             for index in range(len(cacheFileNameSplitted) - 1): # ensure layers of directory exists
                 try:
                     os.chdir(cacheFileNameSplitted[index])
@@ -71,6 +77,9 @@ class CacheHandler:
             try:
                 with open(cacheFileName, 'wb') as cacheFile: # write as byte
                     cacheFile.write(rsp.getPacketRaw())
+                print('------------------------------')
+                print('CacheHandler:: response cached')
+                print('------------------------------')
             except Exception as e:
                 raise e
             try:
@@ -95,6 +104,9 @@ class CacheHandler:
             idx = CacheHandler.__entryExists(cacheFileNameFH, entries) # check cache entry
             if idx == -1: # no entry of such file exists
                 return None
+            print('-----------------------------------')
+            print('CacheHandler:: cache response found')
+            print('-----------------------------------')
             encodings = rqp.getHeaderInfo('accept-encoding')
             if encodings == 'nil':
                 encodings = '*'
@@ -115,8 +127,11 @@ class CacheHandler:
                                 # else:
                                 #     print('CacheHandler:: fetchResponse() unknown splitting with length: ' + str(len(fullPathSplitted)))
                                 #     return None
-                                with open(CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding, 'r') as responseFile:
+                                with open(CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding, 'rb') as responseFile:
                                     responseRaw = responseFile.read()
+                                print('----------------------------------------')
+                                print('CacheHandler:: returning cache response:')
+                                print('----------------------------------------')
                                 return ResponsePacket.parsePacket(responseRaw)
                             except Exception as e:
                                 raise e
@@ -125,19 +140,23 @@ class CacheHandler:
 
                 if entries[idx][encoding] == 'True': # encoding specified is not '*'
                     try:
-                        with open(CacheHandler.cacheFileDirectory + cacheFileNameFH+ ', ' + encoding, 'r') as responseFile:
-                            responseRaw = response.read()
+                        with open(CacheHandler.cacheFileDirectory + cacheFileNameFH+ ', ' + encoding, 'rb') as responseFile:
+                            responseRaw = responseFile.read()
+                        print('----------------------------------------')
+                        print('CacheHandler:: returning cache response:')
+                        print('----------------------------------------')
                         return ResponsePacket.parsePacket(responseRaw)
                     except Exception as e:
+                        print('CacheHandler:: fetchResponse cacheFileName: ' + CacheHandler.cacheFileDirectory + cacheFileNameFH+ ', ' + encoding)
                         raise Exception('could not find entry that should be present')
 
-            # if entries[idx]['uncompressed'] == 'True': # last check if uncompressed file exists
-            #     try:
-            #         with open(CacheHandler.cacheFileDirectory + fullPath + ', ' + 'uncompressed', 'r') as responseFile:
-            #             response = response.read()
-            #         return response
-            #     except Exception as e:
-            #         raise e
+            if entries[idx]['nil'] == 'True': # last check if uncompressed file exists
+                try:
+                    with open(CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + 'nil', 'rb') as responseFile:
+                        responseRaw = responseFile.read()
+                    return ResponsePacket.parsePacket(responseRaw)
+                except Exception as e:
+                    raise e
         else:
             pass # fetching from cache only applies to GET method
             return None
@@ -236,19 +255,18 @@ class CacheHandler:
             "deflate" : "False",
             "br" : "False",
             "identity" : "False",
-            "uncompressed" : "False"
+            "nil" : "False"
         }
         return object
 
     @staticmethod
     def __getCacheFileNameFH(rqp):
-        # encoding = rsp.getHeaderInfo('content-encoding')
-        # if encoding == 'nil':
-        #     encoding = 'uncompressed'
         cacheFileNameSplitted = [rqp.getHostName()]
         if rqp.getFilePath() != '/':
-            filePathSplitted = rqp.getFilePath().split('/')
+            filePathSplitted = rqp.getFilePath()[1:].split('/')
             for subPath in filePathSplitted:
                 cacheFileNameSplitted.append(subPath)
-        cacheFileNameFH = ''.join(cacheFileNameSplitted)
-        return cacheFileNameFH, cacheFileNameSplitted
+        cacheFileNameFH = ''
+        for subpart in cacheFileNameSplitted:
+            cacheFileNameFH += subpart + '/'
+        return cacheFileNameFH[:-1], cacheFileNameSplitted

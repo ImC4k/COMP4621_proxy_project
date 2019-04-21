@@ -30,7 +30,7 @@ class TimeComparator:
         self.__second = int(clockSplitted[2])
 
 
-    def __gr__(self, other):
+    def __gt__(self, other):
         if self.__year > other.__year:
             return True
         if self.__month > other.__month:

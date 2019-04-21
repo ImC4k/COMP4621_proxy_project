@@ -1,5 +1,12 @@
 from socket import *
-from ConnectionThread import ConnectionThread
+
+
+#  ██  ██      ██████  ██████   ██████  ██   ██ ██    ██
+# ████████     ██   ██ ██   ██ ██    ██  ██ ██   ██  ██
+#  ██  ██      ██████  ██████  ██    ██   ███     ████
+# ████████     ██      ██   ██ ██    ██  ██ ██     ██
+#  ██  ██      ██      ██   ██  ██████  ██   ██    ██
+
 
 class Proxy:
     '''
@@ -59,7 +66,8 @@ class Proxy:
                 return i
         return -1
 
-    def setFreeIndex(self, idx, flag):
+    @staticmethod
+    def setFreeIndex(idx, flag):
         Proxy.freeIndexArr[idx] = flag
 
     def listenConnection(self):
@@ -70,6 +78,61 @@ class Proxy:
                 clientThread = ConnectionThread(clientSideSocket, idx)
                 clientThread.start()
                 Proxy.connectionThreads[idx] = clientThread
-                Proxy.setFreeIndex(self, idx, False)
+                Proxy.setFreeIndex(idx, False)
 
                 print('Proxy:: connection to client established')
+
+
+
+
+
+
+
+
+
+
+#  ██  ██       ██████  ██████  ███    ██ ███    ██ ███████  ██████ ████████ ██  ██████  ███    ██     ████████ ██   ██ ██████  ███████  █████  ██████
+# ████████     ██      ██    ██ ████   ██ ████   ██ ██      ██         ██    ██ ██    ██ ████   ██        ██    ██   ██ ██   ██ ██      ██   ██ ██   ██
+#  ██  ██      ██      ██    ██ ██ ██  ██ ██ ██  ██ █████   ██         ██    ██ ██    ██ ██ ██  ██        ██    ███████ ██████  █████   ███████ ██   ██
+# ████████     ██      ██    ██ ██  ██ ██ ██  ██ ██ ██      ██         ██    ██ ██    ██ ██  ██ ██        ██    ██   ██ ██   ██ ██      ██   ██ ██   ██
+#  ██  ██       ██████  ██████  ██   ████ ██   ████ ███████  ██████    ██    ██  ██████  ██   ████        ██    ██   ██ ██   ██ ███████ ██   ██ ██████
+
+
+
+
+import threading
+from SocketHandler import SocketHandler
+
+class ConnectionThread(threading.Thread):
+    '''
+    this class must be imported by Proxy module
+    thread object for clients to make connections
+
+    Members:
+
+        socketHandler:              socketHandler object for the client
+
+        idx:                        index this thread is assigned to, in Proxy.connectionThreads
+
+    Constructor:
+
+        default:                    construct superclass,
+                                    initialize members
+
+    Functions:
+
+        run():                      start socketHandler
+                                    when finish, set Proxy.freeIndexArr[idx] to be free (True)
+    '''
+
+    def __init__(self, socket, idx):
+        threading.Thread.__init__(self)
+        self.socketHandler = SocketHandler(socket)
+        self.idx = idx
+
+    def run(self):
+        print('ConnectionThread:: thread at ' + str(self.idx) + ' starting')
+        self.socketHandler.handleRequest()
+        print('ConnectionThread:: thread at ' + str(self.idx) + ' ending')
+        Proxy.setFreeIndex(self.idx, True)
+        print('ConnectionThread:: index ' + str(self.idx) + ' in Proxy class is set free')

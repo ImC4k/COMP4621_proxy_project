@@ -8,6 +8,8 @@ class ResponsePacket:
 
         __packetRaw:                            entire raw response packet data
 
+        __responseLine:                         first line of response
+
         __headerSplitted:                       entire lines of response header, delimited by '\r\n'
 
         __payload:                              raw payload
@@ -27,7 +29,7 @@ class ResponsePacket:
 
     Functions:
 
-        setPacketRaw(packetRaw):                set raw packet data
+        setPacketRaw(packetRaw):                (deleted) set raw packet data
 
         setHeaderSplitted(headerSplitted):      set splitted packet data
 
@@ -61,7 +63,7 @@ class ResponsePacket:
         this should not be called directly
         instead, should use p = ResponsePacket.parsePacket(packet)
         '''
-        self.__packetRaw = ''
+        # self.__packetRaw = ''
         self.__responseLine = ''
         self.__headerSplitted = []
         self.__payload = ''
@@ -74,6 +76,9 @@ class ResponsePacket:
 
     @classmethod
     def parsePacket(cls, packetRaw):
+        print('ResponsePacket:: received packet:')
+        print(packetRaw)
+        print('\n\n')
         rp = ResponsePacket()
         packetRawSplitted = packetRaw.split(b'\r\n\r\n') # TODO not enough values to unpack error
         if len(packetRawSplitted) == 1:
@@ -87,26 +92,26 @@ class ResponsePacket:
         headerSplitted = header.split('\r\n')
         rp.setResponseLine(headerSplitted[0])
         rp.setHeaderSplitted(headerSplitted[1:])
-        rp.setPacketRaw(packetRaw)
+        # rp.setPacketRaw(packetRaw)
         return rp
 
-    @classmethod
-    def emptyPacket(cls, rqp):
-        '''
-        format:
-        HTTP/1.1 404 Not Found
-        Date: Wed, 17 Apr 2019 13:31:51 GMT
-        Server: Apache
-        Content-Length: 209
-        Keep-Alive: timeout=5, max=100
-        Connection: Keep-Alive
-        Content-Type: text/html; charset=iso-8859-1
-        '''
-        rp = ResponsePacket()
+    # @classmethod
+    # def emptyPacket(cls, rqp):
+    #     '''
+    #     format:
+    #     HTTP/1.1 404 Not Found
+    #     Date: Wed, 17 Apr 2019 13:31:51 GMT
+    #     Server: Apache
+    #     Content-Length: 209
+    #     Keep-Alive: timeout=5, max=100
+    #     Connection: Keep-Alive
+    #     Content-Type: text/html; charset=iso-8859-1
+    #     '''
+    #     rp = ResponsePacket()
 
 
-    def setPacketRaw(self, packetRaw):
-        self.__packetRaw = packetRaw
+    # def setPacketRaw(self, packetRaw):
+    #     self.__packetRaw = packetRaw
 
     def setHeaderSplitted(self, headerSplitted):
         self.__headerSplitted = headerSplitted
@@ -119,7 +124,7 @@ class ResponsePacket:
 
     def modifyTime(self, time):
         index = -1 # line index where header field key is 'date'
-        for idx in len(self.__headerSplitted):
+        for idx in range(len(self.__headerSplitted)):
             if self.__headerSplitted[idx][0:len('date')].lower() == 'date':
                 index = idx
                 break
@@ -127,7 +132,7 @@ class ResponsePacket:
             self.__headerSplitted.append('date: ' + time)
         else:
             self.__headerSplitted[index] = 'date: ' + time
-        self.setPacketRaw(self.getPacket().encode('ascii'))
+        # self.setPacketRaw(self.getPacket().encode('ascii'))
 
     def responseCode(self):
         if self.__responseCode == '':
@@ -187,7 +192,11 @@ class ResponsePacket:
         return s
 
     def getPacketRaw(self):
-        return self.__packetRaw
+        packetRaw = self.__responseLine.encode('ascii') + b'\r\n'
+        for ss in self.__headerSplitted:
+            packetRaw += ss.encode('ascii') + b'\r\n'
+        packetRaw += b'\r\n' + self.__payload
+        return packetRaw
 
     def getResponseLine(self):
         return self.__responseLine
