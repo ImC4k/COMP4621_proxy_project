@@ -1,8 +1,7 @@
 from socket import *
 from RequestPacket import RequestPacket
 from ResponsePacket import ResponsePacket
-# from TimerThread import TimerThread
-from CacheHandler import CacheHandler
+from CacheHandler import CacheHandler, CacheThread
 from TimeComparator import TimeComparator
 
 
@@ -40,8 +39,6 @@ class SocketHandler:
 
         isFirstResponse:                true if first response packet, set maxTransmission, connectionType
 
-        connectionType:                 HTTP or HTTPS, allow different logistics
-
     Constructor:
 
         __init__(socket, callback):     when handleRequest() returns (connection closes),
@@ -58,8 +55,11 @@ class SocketHandler:
                                         connect to server,
                                         return response packet
 
-        cacheResponse(responseRaw):     param: (responseRaw : bytes)
-                                        cache the response to a file
+        establishHTTPSConnection(rqp):  param: (rqp : RequestPacket)
+                                        use HTTPS connection instead of HTTP
+                                        no caching, timeout etc, direct forwarding after CONNECT method
+
+        setTimeout(id):                 if id matches timeoutThreadID, set timeout be True
 
     '''
 
@@ -73,57 +73,96 @@ class SocketHandler:
         self.__timeoutThreadID = -1
         self.__maxTransmission = 100
         self.__isFirstResponse = True
-        # self.__connectionType = 'HTTP'
         print('SocketHandler:: Socket handler initialized')
 
     def handleRequest(self):
         while not self.__timeout and self.__maxTransmission > 0:
-            requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE)
-            if requestRaw == b'':
+            try:
+                requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
+            except Exception as e: # EAGAIN, no data received
+                continue
+            if requestRaw == b'': # data received is empty
                 continue
             rqp = RequestPacket.parsePacket(requestRaw)
             print('SocketHandler:: received data: \n' + rqp.getPacket('DEBUG') + '\nrequest packet end\n')
             if rqp.getMethod().lower() == 'connect':
                 print('SocketHandler:: CONNECT method detected, using HTTPS protocol')
+                print('--------------')
+                print('| PATH HTTPS |')
+                print('--------------')
                 self.establishHTTPSConnection(rqp)
                 return
-            elif rqp.getMethod().lower() == 'get': # follow draft semantics
+            elif rqp.getMethod().lower() == 'get':
                 fetchedResponse = CacheHandler.fetchResponse(rqp)
                 if fetchedResponse is None: # no cache found
                     rsp = self.requestToServer(rqp)
+                    if rsp is None:
+                        print('SocketHandler:: cannot receive response, forged a packet')
+                        rsp = ResponsePacket.emptyPacket()
                     print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
                     if rsp.responseCode() == '200':
                         print('---------------------------------')
                         print('SocketHandler:: caching response:')
                         print('---------------------------------')
-                        CacheHandler.cacheResponse(rqp, rsp) # TODO should be handled by thread
+                        ct = CacheThread(rqp, rsp, 'ADD')
+                        ct.start()
+                        print('-----------')
+                        print('| PATH AA |')
+                        print('-----------')
+                    else:
+                        print('----------')
+                        print('| PATH A |')
+                        print('----------')
                     self.__socket.send(rsp.getPacketRaw())
                 else: # cache response found
                     rqpTimeLine = rqp.getHeaderInfo('if-modified-since')
-                    print(rqpTimeLine)
                     if rqpTimeLine == 'nil':
-                        # forgeTime = fetchedResponse.getHeaderInfo('date')
                         rqp.modifyTime(fetchedResponse.getHeaderInfo('date'))
                         print('------------------------------------------')
                         print('SocketHandler:: check if cache is updated:')
                         print('------------------------------------------')
                         rsp = self.requestToServer(rqp)
+                        if rsp is None:
+                            print('SocketHandler:: cannot receive response, forged a packet')
+                            rsp = ResponsePacket.emptyPacket()
                         if rsp.responseCode() == '200':
                             print('----------------------------------------')
                             print('SocketHandler:: new data found, caching:')
                             print('----------------------------------------')
-                            CacheHandler.cacheResponse(rqp, rsp) # TODO should be handled by thread
+                            ct = CacheThread(rqp, rsp, 'ADD')
+                            ct.start()
+                            print('------------')
+                            print('| PATH BAA |')
+                            print('------------')
                             self.__socket.send(rsp.getPacketRaw())
                         elif rsp.responseCode() == '304':
                             print('----------------------------')
                             print('SocketHandler:: cache is OK:')
                             print('----------------------------')
                             fetchedResponse.modifyTime(rsp.getHeaderInfo('date'))
+                            ct = CacheThread(rqp, fetchedResponse, 'ADD')
+                            ct.start()
+                            print('------------')
+                            print('| PATH BAB |')
+                            print('------------')
                             self.__socket.send(fetchedResponse.getPacketRaw())
+                        elif rsp.responseCode() == '404':
+                            print('-------------------------------------------')
+                            print('SocketHandler:: no such file, delete cache:')
+                            print('-------------------------------------------')
+                            ct = CacheThread(rqp, rsp, 'DEL')
+                            ct.start()
+                            print('------------')
+                            print('| PATH BAC |')
+                            print('------------')
+                            self.__socket.send(rsp.getPacketRaw())
                         else:
                             print('-------------------------------------------------------')
                             print('SocketHandler:: packet is directly forwarded to client:')
                             print('-------------------------------------------------------')
+                            print('------------')
+                            print('| PATH BAD |')
+                            print('------------')
                             self.__socket.send(rsp.getPacketRaw())
                     else:
                         rqpTime = TimeComparator(rqpTimeLine)
@@ -133,67 +172,130 @@ class SocketHandler:
                             print('SocketHandler:: rqp > fetch, check if modified since rqp:')
                             print('---------------------------------------------------------')
                             rsp = self.requestToServer(rqp)
+                            if rsp is None:
+                                print('SocketHandler:: cannot receive response, forged a packet')
+                                rsp = ResponsePacket.emptyPacket()
                             if rsp.responseCode() == '200':
                                 print('----------------------------------------')
                                 print('SocketHandler:: new data found, caching:')
                                 print('----------------------------------------')
-                                CacheHandler.cacheResponse(rqp, rsp) # TODO should be handled by thread
-                            self.__socket.send(rsp.getPacketRaw())
-                        else: # fetchTime > rqpTime
-                            rqp.modifyTime(fetchTime)
-                            print('-----------------------------------------------------------')
-                            print('SocketHandler:: fetch > rqp, check if modified since fetch:')
-                            print('-----------------------------------------------------------')
-                            rsp = self.requestToServer(rqp)
-                            if rsp.responseCode() == '200':
-                                print('----------------------------------------')
-                                print('SocketHandler:: new data found, caching:')
-                                print('----------------------------------------')
-                                CacheHandler.cacheResponse(rqp, rsp) # TODO should be handled by thread
+                                ct = CacheThread(rqp, rsp, 'ADD')
+                                ct.start()
+                                print('-------------')
+                                print('| PATH BBBA |')
+                                print('-------------')
                                 self.__socket.send(rsp.getPacketRaw())
                             elif rsp.responseCode() == '304':
                                 print('----------------------------------')
                                 print('SocketHandler:: update cache time:')
                                 print('----------------------------------')
                                 fetchedResponse.modifyTime(rsp.getHeaderInfo('date'))
-                                CacheHandler.cacheResponse(rqp, fetchedResponse) # TODO should be handled by thread
-                                self.__socket.send(fetchedResponse)
+                                ct = CacheThread(rqp, rsp, 'ADD')
+                                ct.start()
+                                print('-------------')
+                                print('| PATH BBBB |')
+                                print('-------------')
+                                self.__socket.send(fetchedResponse.getPacketRaw())
                             elif rsp.responseCode() == '404':
                                 print('-------------------------------------------')
                                 print('SocketHandler:: no such file, delete cache:')
                                 print('-------------------------------------------')
-                                CacheHandler.deleteFromCache(rqp, rsp) # TODO should be handled by thread
+                                ct = CacheThread(rqp, rsp, 'DEL')
+                                ct.start()
+                                print('-------------')
+                                print('| PATH BBBC |')
+                                print('-------------')
                                 self.__socket.send(rsp.getPacketRaw())
                             else:
                                 print('-------------------------------------------------------')
                                 print('SocketHandler:: packet is directly forwarded to client:')
                                 print('-------------------------------------------------------')
+                                print('-------------')
+                                print('| PATH BBBD |')
+                                print('-------------')
+                                self.__socket.send(rsp.getPacketRaw())
+                        else: # fetchTime > rqpTime
+                            rqp.modifyTime(fetchTime)
+                            print('-----------------------------------------------------------')
+                            print('SocketHandler:: fetch > rqp, check if modified since fetch:')
+                            print('-----------------------------------------------------------')
+                            rsp = self.requestToServer(rqp)
+                            if rsp is None:
+                                print('SocketHandler:: cannot receive response, forged a packet')
+                                rsp = ResponsePacket.emptyPacket()
+                            if rsp.responseCode() == '200':
+                                print('----------------------------------------')
+                                print('SocketHandler:: new data found, caching:')
+                                print('----------------------------------------')
+                                ct = CacheThread(rqp, rsp, 'ADD')
+                                ct.start()
+                                print('-------------')
+                                print('| PATH BBAA |')
+                                print('-------------')
+                                self.__socket.send(rsp.getPacketRaw())
+                            elif rsp.responseCode() == '304':
+                                print('----------------------------------')
+                                print('SocketHandler:: update cache time:')
+                                print('----------------------------------')
+                                fetchedResponse.modifyTime(rsp.getHeaderInfo('date'))
+                                ct = CacheThread(rqp, rsp, 'ADD')
+                                ct.start()
+                                print('-------------')
+                                print('| PATH BBAB |')
+                                print('-------------')
+                                self.__socket.send(fetchedResponse)
+                            elif rsp.responseCode() == '404':
+                                print('-------------------------------------------')
+                                print('SocketHandler:: no such file, delete cache:')
+                                print('-------------------------------------------')
+                                ct = CacheThread(rqp, rsp, 'DEL')
+                                ct.start()
+                                print('-------------')
+                                print('| PATH BBAC |')
+                                print('-------------')
+                                self.__socket.send(rsp.getPacketRaw())
+                            else:
+                                print('-------------------------------------------------------')
+                                print('SocketHandler:: packet is directly forwarded to client:')
+                                print('-------------------------------------------------------')
+                                print('-------------')
+                                print('| PATH BBAD |')
+                                print('-------------')
                                 self.__socket.send(rsp.getPacketRaw())
 
             else: # not GET nor CONNECT, request from server and reply to client, no caching required
                 rsp = self.requestToServer(rqp)
                 if rsp is None:
+                    print('SocketHandler:: cannot receive response, forged a packet')
                     rsp = ResponsePacket.emptyPacket()
+                    print('----------')
+                    print('| PATH C |')
+                    print('----------')
                 self.__socket.send(rsp.getPacketRaw())
 
-
+            # self.__socket.close() # DEBUG
+            # return # DEBUG
+            print('----------------------------------------------')
+            print('SocketHandler:: packet is forwarded to client:')
+            print('----------------------------------------------')
             time = rsp.getKeepLive('timeout')
+            if time == 'nil': # default timeout 100s
+                time = '100'
             self.__timeoutThreadID += 1
             timer = TimerThread(self.__timeoutThreadID, int(time), self)
             print('SocketHandler:: timeout set for ' + time + ' seconds')
             timer.start()
 
             if self.__isFirstResponse:
-                self.__maxTransmission = int(rsp.getKeepLive('max'))
+                maxTransmission = rsp.getKeepLive('max')
+                if maxTransmission == 'nil':
+                    self.__maxTransmission = 100
+                else:
+                    self.__maxTransmission = int(maxTransmission)
                 print('SocketHandler:: max transmission: ' + str(self.__maxTransmission))
-                # if rqp.getMethod().lower() == 'connect':
-                #     self.__connectionType = 'HTTPS'
                 self.__isFirstResponse = False
 
-            # if rqp.getMethod().lower() == 'get' and rsp.responseCode() == '200':
-            #     CacheHandler.cacheResponse(rqp, rsp) # open thread to cache, don't spend time on connection thread
-
-            if rqp.getConnection().lower() == 'close':
+            if rqp.getVersion().lower() != 'HTTP/1.1' and rqp.getConnection().lower() == 'close':
                 self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
 
@@ -202,11 +304,6 @@ class SocketHandler:
 
     def requestToServer(self, rqp):
         serverAddr = gethostbyname(rqp.getHostName())
-
-        # if rqp.getMethod().lower() == 'connect':
-        #     serverPort = SocketHandler.HTTPS_PORT
-        # else:
-        #     serverPort = SocketHandler.HTTP_PORT
         serverPort = SocketHandler.HTTP_PORT
 
         serverSideSocket = socket(AF_INET, SOCK_STREAM)
@@ -218,13 +315,20 @@ class SocketHandler:
             return None
         rsp = ResponsePacket.parsePacket(responseRaw)
         if rsp.getHeaderInfo('transfer-encoding').lower() == 'chunked': # TODO handle chunked data
+            print('-----------------------------')
+            print('|                           |')
+            print('|                           |')
+            print('|  UNHANDLED CHUNKED DATA!  |')
+            print('|                           |')
+            print('|                           |')
+            print('-----------------------------')
             pass
         serverSideSocket.close()
         return rsp
 
     def establishHTTPSConnection(self, rqp):
-        print('SocketHandler:: establishHTTPSConnection(): not build yet, returning')
-        return
+        # print('SocketHandler:: establishHTTPSConnection(): not build yet, returning') # DEBUG
+        # return
         serverAddr = gethostbyname(rqp.getHostName())
         serverPort = SocketHandler.HTTPS_PORT
         serverSideSocket = socket(AF_INET, SOCK_STREAM)
@@ -235,9 +339,19 @@ class SocketHandler:
         print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
 
         self.__socket.send(responseRaw)
-        while True: # TODO
-            print('loop until end connection')
-            break
+        while True: # TODO HTTPS connection
+            try:
+                requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
+                serverSideSocket.send(requestRaw)
+            except Exception as e:
+                continue
+
+            try:
+                responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE)
+                self.__socket.send(responseRaw)
+            except Exception as e:
+                self.__socket.close()
+                return
 
     def setTimeout(self, id):
         if self.__timeoutThreadID == id:
@@ -261,7 +375,6 @@ class SocketHandler:
 
 import threading
 from time import sleep
-# no need to import SocketHandler here, otherwise it will cause a cycle
 
 class TimerThread(threading.Thread):
     '''

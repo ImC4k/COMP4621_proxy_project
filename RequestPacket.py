@@ -4,8 +4,6 @@ class RequestPacket:
 
     Members:
 
-        __packetRaw:                                raw request packet data
-
         __requestLine:                              request line, first line of the header
 
         __filePath:                                 filePath of packet
@@ -22,11 +20,9 @@ class RequestPacket:
 
         default:                                    does nothing
 
-        parsePacket(packet):                        takes entire raw packet, auto separation, fix url and initialize members
+        parsePacket(packetRaw):                     takes entire raw packet, auto separation, fix url and initialize members
 
     Functions:
-
-        setPacketRaw(packetRaw):                    (deleted) set raw packet data
 
         setHeaderSplitted(headerSplitted):          set splitted packet data (header fields only)
 
@@ -49,7 +45,9 @@ class RequestPacket:
         getHeaderInfo(fieldName):                   param: (fieldName : string)
                                                     (update) returns value of fieldName
 
-        getPacket():                                returns reformed packet
+        getVersion():                               eg HTTP/1.1
+
+        getPacket(option=''):                       returns reformed packet option 'DEBUG' to omit printing payload
 
         getPacketRaw():                             returns raw (encoded) packet data
 
@@ -72,7 +70,6 @@ class RequestPacket:
         self.__payload = ''
         self.__method = ''
         self.__connection = ''
-        self.__fullPath = ''
         pass
 
     @classmethod
@@ -81,7 +78,7 @@ class RequestPacket:
         print(packetRaw)
         print('\n\n')
         rp = RequestPacket()
-        packetRawSplitted = packetRaw.split(b'\r\n\r\n') # TODO not enough values to unpack error
+        packetRawSplitted = packetRaw.split(b'\r\n\r\n')
         if len(packetRawSplitted) == 1:
             headerRaw = packetRawSplitted[0]
         elif len(packetRawSplitted) == 2:
@@ -95,20 +92,22 @@ class RequestPacket:
         rp.setHeaderSplitted(headerSplitted[1:])
         if rp.getMethod().lower() != 'connect': # file path needs to be fixed
             requestLineSplitted = headerSplitted[0].split(' ')
-            rp.setFullPath(requestLineSplitted[1])
             requestLineSplitted[1] = rp.getFilePath()
             s = ''
             for ss in requestLineSplitted:
                 s += ss + ' '
             rp.setRequestLine(s[:-1]) # drop the last extra space character
-        #     rp.setPacketRaw(rp.getPacket('HEADER_ONLY').encode('ascii') + rp.getPayload())
-        # else:
-        #     rp.setPacketRaw(packetRaw)
+        else:
+            requestLinePlitted = headerSplitted[0].split(' ')
+            filePath = requestLineSplitted[1]
+            filePathSplitted = filePath.split(':')
+            requestLineSplitted[1] = filePathSplitted[0]
+            fixedRequestLine = ''
+            for ss in requestLineSplitted:
+                fixedRequestLine += ss + ' '
+            rp.setRequestLine(s[:-1])
 
         return rp
-
-    # def setPacketRaw(self, packetRaw):
-    #     self.__packetRaw = packetRaw
 
     def setHeaderSplitted(self, headerSplitted):
         self.__headerSplitted = headerSplitted
@@ -118,9 +117,6 @@ class RequestPacket:
 
     def setPayload(self, payload):
         self.__payload = payload
-
-    def setFullPath(self, fullPath):
-        self.__fullPath = fullPath
 
     def fixRequestLine(self):
         '''
@@ -171,10 +167,10 @@ class RequestPacket:
                 break
         hostLineSplitted = hostLine.split(' ')
         if self.getMethod() == 'CONNECT':
-            print('\n\n\n\n\n\n\nRequestPacket:: host is ' + hostLineSplitted[1][:-len(':443')])
+            print('\nRequestPacket:: host is ' + hostLineSplitted[1][:-len(':443')])
             return hostLineSplitted[1][:-len(':443')]
         else:
-            print('\n\n\n\n\n\n\nRequestPacket:: host is ' + hostLineSplitted[1])
+            print('\nRequestPacket:: host is ' + hostLineSplitted[1])
             return hostLineSplitted[1]
 
     def getMethod(self):
@@ -206,6 +202,12 @@ class RequestPacket:
         else:
             return line[len(fieldName) + 2 :] # strip 'fieldName: '
 
+    def getVersion(self):
+        requestLineSplitted = self.__requestLine.split(' ')
+        for ss in requestLineSplitted:
+            if ss[0:len('HTTP')].lower() == 'http':
+                return ss
+
 
     def getPacket(self, option=''):
         s = ''
@@ -236,6 +238,3 @@ class RequestPacket:
 
     def getPayload(self):
         return self.__payload
-
-    def getFullPath(self):
-        return self.__fullPath

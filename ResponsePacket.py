@@ -6,19 +6,21 @@ class ResponsePacket:
 
     Members:
 
-        __packetRaw:                            entire raw response packet data
-
         __responseLine:                         first line of response
 
         __headerSplitted:                       entire lines of response header, delimited by '\r\n'
 
         __payload:                              raw payload
 
+        __responseCode:                         response code of packet
+
         __timeout:                              integer
 
         __lastModified:                         time the response data is last modified
 
         __transferEncoding:                     content encoding type eg chunked, compress, deflate, gzip, identity
+
+        __cacheControl:                         eg public, private, must-revalidate
 
     Constructors:
 
@@ -27,11 +29,13 @@ class ResponsePacket:
         parsePacket(packetRaw):                 param: (packetRaw : bytes)
                                                 takes entire raw packet, auto separation and initialize members
 
+        emptyPacket(rqp):                       creates 504 Gateway Timeout packet
+
     Functions:
 
-        setPacketRaw(packetRaw):                (deleted) set raw packet data
-
         setHeaderSplitted(headerSplitted):      set splitted packet data
+
+        setResponseLine(responseLine)           set response line
 
         setPayload(payload):                    set payload data
 
@@ -47,13 +51,13 @@ class ResponsePacket:
         getHeaderInfo(fieldName):               param: (fieldName : string)
                                                 (update) returns value of fieldName
 
-        getPacket():                            returns string packet
+        getPacket(option=''):                   returns string packet, option'DEBUG' to omit printing payload
 
         getPacketRaw():                         returns raw (encoded) packet data
 
         getResponseLine():                      returns string response line
 
-        getHeader():                            returns list of string header fields
+        getHeaderSplitted():                    returns list of string header fields
 
         getPayload():                           returns raw payload (no header)
     '''
@@ -63,7 +67,6 @@ class ResponsePacket:
         this should not be called directly
         instead, should use p = ResponsePacket.parsePacket(packet)
         '''
-        # self.__packetRaw = ''
         self.__responseLine = ''
         self.__headerSplitted = []
         self.__payload = ''
@@ -80,7 +83,7 @@ class ResponsePacket:
         print(packetRaw)
         print('\n\n')
         rp = ResponsePacket()
-        packetRawSplitted = packetRaw.split(b'\r\n\r\n') # TODO not enough values to unpack error
+        packetRawSplitted = packetRaw.split(b'\r\n\r\n')
         if len(packetRawSplitted) == 1:
             headerRaw = packetRawSplitted[0]
         elif len(packetRawSplitted) == 2:
@@ -95,23 +98,27 @@ class ResponsePacket:
         # rp.setPacketRaw(packetRaw)
         return rp
 
-    # @classmethod
-    # def emptyPacket(cls, rqp):
-    #     '''
-    #     format:
-    #     HTTP/1.1 404 Not Found
-    #     Date: Wed, 17 Apr 2019 13:31:51 GMT
-    #     Server: Apache
-    #     Content-Length: 209
-    #     Keep-Alive: timeout=5, max=100
-    #     Connection: Keep-Alive
-    #     Content-Type: text/html; charset=iso-8859-1
-    #     '''
-    #     rp = ResponsePacket()
-
-
-    # def setPacketRaw(self, packetRaw):
-    #     self.__packetRaw = packetRaw
+    @classmethod
+    def emptyPacket(cls, rqp):
+        '''
+        format:
+        HTTP/1.1 404 Not Found
+        Date: Wed, 17 Apr 2019 13:31:51 GMT
+        Server: Apache
+        Content-Length: 209
+        Keep-Alive: timeout=5, max=100
+        Connection: Keep-Alive
+        Content-Type: text/html; charset=iso-8859-1
+        '''
+        version = rqp.getVersion()
+        date = rqp.getHeaderInfo('date')
+        packet = version + ' 504 Gateway Timeout\r\n'
+        if date != 'nil':
+            packet += 'Date: ' + date + '\r\n'
+        packet += '\r\n'
+        packetRaw = packet.encode('ascii')
+        rp = ResponsePacket.parsePacket(packetRaw)
+        return rp
 
     def setHeaderSplitted(self, headerSplitted):
         self.__headerSplitted = headerSplitted

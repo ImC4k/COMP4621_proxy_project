@@ -46,27 +46,29 @@ class CacheHandler:
         deleteFromCache(rqp, rsp):                      delete cache response
                                                         update lookup file correspondingly
 
-        updateLookup(method, fullPath, encoding):       param: (method: {'ADD', 'DEL'}, fullPath : string, encoding : string)
+        __updateLookup(method, FH, encoding):           param: (method: {'ADD', 'DEL'}, fullPath : string, encoding : string)
                                                         ADD: add entry to lookup table
                                                         DEL: delete entry from lookup table
 
-        entryExists(fullPath):                          check if response ${fullPath} exists in lookup table
+        __entryExists(FH, entries):                     check if response ${FH} exists in entries
                                                         returns index in array if true,
                                                         returns -1 otherwise
 
-        generateJSON(fullPath):                         generate template for ${fullPath} object
+        __generateJSON(FH):                             generate template for ${FH} object
+
+        __getCacheFileNameFH(rqp):                      generate cache file name first half for the request
     '''
 
     cacheFileDirectory = 'cache_responses/'
 
     @staticmethod
-    def cacheResponse(rqp, rsp): # TODO fix cache response file name
+    def cacheResponse(rqp, rsp):
         '''
         assumed request method is GET
         '''
         cacheOption = rsp.getHeaderInfo('cache-control').lower()
-        if cacheOption == 'public' or cacheOption == 'nil': # specified as public or the header field is not present
-            # fullPath = rqp.getFullPath() # for cache entry
+        cacheOptionSplitted = cacheOption.split(', ')
+        if 'public' in cacheOptionSplitted or 'nil' in cacheOptionSplitted: # specified as public or the header field is not present
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half
             encoding = rsp.getHeaderInfo('content-encoding')
             cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding
@@ -94,17 +96,18 @@ class CacheHandler:
             except Exception as e:
                 raise e
             try:
-                # CacheHandler.__updateLookup('ADD', fullPath, encoding)
                 CacheHandler.__updateLookup('ADD', cacheFileNameFH, encoding)
             except Exception as e:
                 raise e
         else:
             pass # do not cache response
+            print('-------------------------')
+            print('CacheHandler:: not cached')
+            print('-------------------------')
 
     @staticmethod
     def fetchResponse(rqp):
         if rqp.getMethod().lower() == 'get':
-            # fullPath = rqp.getFullPath()
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
 
             try:
@@ -129,15 +132,6 @@ class CacheHandler:
                             continue
                         if entries[idx][encoding] == 'True':
                             try:
-                                # cacheFileNameFH = entries[idx]['cacheFileNameFH']
-                                # fullPathSplitted = fullPath.split('//')
-                                # if len(fullPathSplitted) == 1:
-                                #     cacheFileNameFH = fullPathSplitted[0] # cache file name first half (without encoding)
-                                # elif len(fullPathSplitted) == 2:
-                                #     cacheFileNameFH = fullPathSplitted[1]
-                                # else:
-                                #     print('CacheHandler:: fetchResponse() unknown splitting with length: ' + str(len(fullPathSplitted)))
-                                #     return None
                                 with open(CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding, 'rb') as responseFile:
                                     responseRaw = responseFile.read()
                                 print('----------------------------------------')
@@ -174,15 +168,12 @@ class CacheHandler:
 
     @staticmethod
     def deleteFromCache(rqp, rsp):
-        cacheOption = rsp.getHeaderInfo('cache-control').lower()
-        if cacheOption == 'public':
-            # fullPath = rqp.getFullPath()
-            cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
+        cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
+
+        if CacheHandler.__entryExists(cacheFileNameFH) != -1:
             encoding = rsp.getHeaderInfo('content-encoding')
-            # cacheFileName = CacheHandler.cacheFileDirectory + fullPath + ', ' + encoding
             cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding
             try:
-                # os.remove(CacheHandler.cacheFileDirectory + fullPath + ', ' + encoding)
                 os.remove(cacheFileName)
             except Exception as e:
                 raise Exception('CacheHandler:: deleteFromCache(): attempted to delete non-existing file')
@@ -251,7 +242,13 @@ class CacheHandler:
             json.dump(entries, table, indent=4)
 
     @staticmethod
-    def __entryExists(cacheFileNameFH, entries):
+    def __entryExists(cacheFileNameFH, entries=[]):
+        if entries == []:
+            try:
+                with open('cache_lookup_table.json', 'r') as table:
+                    entries = json.load(table)
+            except Exception as e: # unable to open, meaning no such table, thus no cache
+                return -1
         for idx in range(len(entries)):
             if entries[idx]['cacheFileNameFH'] == cacheFileNameFH:
                 return idx
@@ -318,10 +315,14 @@ class CacheThread(threading.Thread):
         run:                    call CacheHandler.cacheResponse(rqp, rsp)
     '''
 
-    def __init__(self, rqp, rsp):
+    def __init__(self, rqp, rsp, option):
         threading.Thread.__init__(self)
         self.__rqp = rqp
         self.__rsp = rsp
+        self.__option = option
 
     def run(self):
-        CacheHandler.cacheResponse(self.__rqp, self.__rsp)
+        if self.__option == 'ADD':
+            CacheHandler.cacheResponse(self.__rqp, self.__rsp)
+        elif self.__option == 'DEL':
+            CacheHandler.deleteFromCache(self.__rqp, self.__rsp)

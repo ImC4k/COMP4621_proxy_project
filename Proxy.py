@@ -72,16 +72,19 @@ class Proxy:
 
     def listenConnection(self):
         while True:
-            idx = Proxy.getFreeIndex(self)
-            if idx != -1:
-                clientSideSocket, addr = self.welcomeSocket.accept()
-                clientThread = ConnectionThread(clientSideSocket, idx)
-                clientThread.start()
-                Proxy.connectionThreads[idx] = clientThread
-                Proxy.setFreeIndex(idx, False)
+            try:
+                idx = Proxy.getFreeIndex(self)
+                if idx != -1:
+                    clientSideSocket, addr = self.welcomeSocket.accept()
+                    clientThread = ConnectionThread(clientSideSocket, idx)
+                    clientThread.start()
+                    Proxy.connectionThreads[idx] = clientThread
+                    Proxy.setFreeIndex(idx, False)
 
-                print('Proxy:: connection to client established')
-
+                    print('Proxy:: connection to client established')
+            except KeyboardInterrupt:
+                print('Proxy:: closing proxy')
+                break
 
 
 
