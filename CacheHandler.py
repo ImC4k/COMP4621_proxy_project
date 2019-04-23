@@ -65,10 +65,12 @@ class CacheHandler:
     def cacheResponse(rqp, rsp):
         '''
         assumed request method is GET
+        cache response whenever no-store, private are not specified in cache-control
+        because all cached response will be revalidated by proxy anyway
         '''
         cacheOption = rsp.getHeaderInfo('cache-control').lower()
         cacheOptionSplitted = cacheOption.split(', ')
-        if 'public' in cacheOptionSplitted or 'nil' in cacheOptionSplitted: # specified as public or the header field is not present
+        if 'no-store' not in cacheOptionSplitted and 'private' not in cacheOptionSplitted: # specified as public or the header field is not present
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half
             encoding = rsp.getHeaderInfo('content-encoding')
             cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding
