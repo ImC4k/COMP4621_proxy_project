@@ -36,7 +36,7 @@ class CacheHandler:
                                                         if no, then simply return
                                                         if yes,
                                                             write the response to cached_responses/ directory,
-                                                            with title: `${fullPath}, ${encoding}`,
+                                                            with title: `${FH}, ${encoding}`,
                                                             with raw response as payload
                                                             update lookup file correspondingly
 
@@ -46,7 +46,7 @@ class CacheHandler:
         deleteFromCache(rqp, rsp):                      delete cache response
                                                         update lookup file correspondingly
 
-        __updateLookup(method, FH, encoding):           param: (method: {'ADD', 'DEL'}, fullPath : string, encoding : string)
+        __updateLookup(method, FH, encoding):           param: (method: {'ADD', 'DEL'}, FH : string, encoding : string)
                                                         ADD: add entry to lookup table
                                                         DEL: delete entry from lookup table
 
