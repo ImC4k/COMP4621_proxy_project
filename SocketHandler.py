@@ -330,28 +330,39 @@ class SocketHandler:
         # print('SocketHandler:: establishHTTPSConnection(): not build yet, returning') # DEBUG
         # return
         serverAddr = gethostbyname(rqp.getHostName())
-        serverPort = SocketHandler.HTTPS_PORT
+        serverPort = SocketHandler.HTTPS_PORT # BUG
         serverSideSocket = socket(AF_INET, SOCK_STREAM)
-        serverSideSocket.connect((serverAddr, serverPort))
-        serverSideSocket.send(rqp.getPacketRaw())
-        responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE)
-        rsp = ResponsePacket.parsePacket(responseRaw)
-        print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
+        serverSideSocket.connect((serverAddr, serverPort)) #TODO try block
+        self.__socket.send(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+        # serverSideSocket.send(rqp.getPacketRaw())
+        # responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE)
 
-        self.__socket.send(responseRaw)
+
+
+        # rsp = ResponsePacket.parsePacket(responseRaw)
+        # print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
+        # self.__socket.send(responseRaw)
+
         while True: # TODO HTTPS connection
             try:
                 requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
+                # print('-------------------------------')
+                # print('| HTTPS: received from client |')
+                # print('-------------------------------')
                 serverSideSocket.send(requestRaw)
-            except Exception as e:
-                continue
+            except Exception as e: #EAGAIN
+                pass
 
             try:
-                responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE)
+                responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
+                # print('-------------------------------')
+                # print('| HTTPS: received from server |')
+                # print('-------------------------------')
                 self.__socket.send(responseRaw)
-            except Exception as e:
-                self.__socket.close()
-                return
+            except Exception as e: #EAGAIN
+                # self.__socket.close()
+                pass
+
 
     def setTimeout(self, id):
         if self.__timeoutThreadID == id:

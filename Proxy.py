@@ -52,6 +52,7 @@ class Proxy:
         self.proxyAddr = '127.0.0.1'
         self.proxyPort = port
         self.welcomeSocket = socket(AF_INET, SOCK_STREAM)
+        self.welcomeSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         self.welcomeSocket.bind((self.proxyAddr, self.proxyPort))
         self.welcomeSocket.listen(Proxy.MAX_CONNECTION)
         for i in range(Proxy.MAX_CONNECTION):

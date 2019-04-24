@@ -98,14 +98,14 @@ class RequestPacket:
                 s += ss + ' '
             rp.setRequestLine(s[:-1]) # drop the last extra space character
         else:
-            requestLinePlitted = headerSplitted[0].split(' ')
+            requestLineSplitted = headerSplitted[0].split(' ')
             filePath = requestLineSplitted[1]
             filePathSplitted = filePath.split(':')
             requestLineSplitted[1] = filePathSplitted[0]
             fixedRequestLine = ''
             for ss in requestLineSplitted:
                 fixedRequestLine += ss + ' '
-            rp.setRequestLine(s[:-1])
+            rp.setRequestLine(ss[:-1])
 
         return rp
 
