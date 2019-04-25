@@ -327,40 +327,28 @@ class SocketHandler:
         return rsp
 
     def establishHTTPSConnection(self, rqp):
-        # print('SocketHandler:: establishHTTPSConnection(): not build yet, returning') # DEBUG
-        # return
+
         serverAddr = gethostbyname(rqp.getHostName())
         serverPort = SocketHandler.HTTPS_PORT # BUG
         serverSideSocket = socket(AF_INET, SOCK_STREAM)
-        serverSideSocket.connect((serverAddr, serverPort)) #TODO try block
+        try:
+            serverSideSocket.connect((serverAddr, serverPort))
+        except Exception as e:
+            print('SocketHandler:: establish HTTPS connection to server failed')
+            raise e
         self.__socket.send(b'HTTP/1.1 200 Connection Established\r\n\r\n')
-        # serverSideSocket.send(rqp.getPacketRaw())
-        # responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE)
-
-
-
-        # rsp = ResponsePacket.parsePacket(responseRaw)
-        # print('SocketHandler:: received response: \n' + rsp.getPacket('DEBUG') + '\nresponse packet end\n')
-        # self.__socket.send(responseRaw)
 
         while True: # TODO HTTPS connection
             try:
                 requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
-                # print('-------------------------------')
-                # print('| HTTPS: received from client |')
-                # print('-------------------------------')
                 serverSideSocket.send(requestRaw)
             except Exception as e: #EAGAIN
                 pass
 
             try:
                 responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
-                # print('-------------------------------')
-                # print('| HTTPS: received from server |')
-                # print('-------------------------------')
                 self.__socket.send(responseRaw)
             except Exception as e: #EAGAIN
-                # self.__socket.close()
                 pass
 
 
