@@ -14,13 +14,7 @@ class ResponsePacket:
 
         __responseCode:                         response code of packet
 
-        __timeout:                              integer
-
-        __lastModified:                         time the response data is last modified
-
-        __transferEncoding:                     content encoding type eg chunked, compress, deflate, gzip, identity
-
-        __cacheControl:                         eg public, private, must-revalidate
+        __isLastPacket:                         specify if this packet is the last packet of the request
 
     Constructors:
 
@@ -42,6 +36,10 @@ class ResponsePacket:
         modifyTime(time):                       change the date field to ${time}
 
         responseCode():                         returns string response code
+
+        isLastPacket():                         True if this is the last packet of the response
+
+        isChunked():                            True if this packet is part of a chunked response
 
         getKeepLive(option=''):                 returns keep-alive field value
                                                 option: timeout or max
@@ -71,14 +69,16 @@ class ResponsePacket:
         self.__headerSplitted = []
         self.__payload = ''
         self.__responseCode = ''
-        self.__timeout = ''
-        self.__lastModified = ''
-        self.__transferEncoding = ''
-        self.__cacheControl = ''
+        self.__isLastPacket = ''
         pass
 
     @classmethod
     def parsePacket(cls, packetRaw):
+        '''
+        note: packetRaw can contain chunked data,
+        meaning there exists 1 header, multiple payload
+        mission: reform into multiple packets, return the list of ResponsePacket objects
+        '''
         print('ResponsePacket:: received packet:')
         print(packetRaw)
         print('\n\n')
@@ -89,13 +89,14 @@ class ResponsePacket:
         elif len(packetRawSplitted) == 2:
             headerRaw, payload = packetRawSplitted
             rp.setPayload(payload)
-        else:
-            print('RequestPacket:: strange number of values unpacket: ' + str(len(packetRawSplitted)))
+        else: # contains chunked data
+            headerRaw = packetRawSplitted[0]
+            payload = packetRaw[len(headerRaw):]
+            rp.setPayload(payload)
         header = headerRaw.decode('ascii')
         headerSplitted = header.split('\r\n')
         rp.setResponseLine(headerSplitted[0])
         rp.setHeaderSplitted(headerSplitted[1:])
-        # rp.setPacketRaw(packetRaw)
         return rp
 
     @classmethod
@@ -119,6 +120,10 @@ class ResponsePacket:
         packetRaw = packet.encode('ascii')
         rp = ResponsePacket.parsePacket(packetRaw)
         return rp
+
+    @classmethod
+    def forbiddenPacket(cls, rqp): # TODO create 403 forbidden packet for access control class
+        pass
 
     def setHeaderSplitted(self, headerSplitted):
         self.__headerSplitted = headerSplitted
@@ -147,6 +152,26 @@ class ResponsePacket:
             self.__responseCode = responseLineSplitted[1]
         return self.__responseCode
 
+    def isLastPacket(self):
+        if self.__isLastPacket == '':
+            if self.isChunked():
+                payloadSplitted = self.__payload.split(b'\r\n')
+                if payloadSplitted[:len(b'0\r\n\r\n')] == b'0\r\n\r\n':
+                    self.__isLastPacket = True
+                else:
+                    self.__isLastPacket = False
+            else:
+                self.__isLastPacket = True
+        return self.__isLastPacket
+
+    def isChunked(self):
+        transferEncoding = self.getHeaderInfo('transfer-encoding').lower()
+        transferEncodingSplitted = transferEncoding.split(', ')
+        if 'chunked' in transferEncodingSplitted:
+            return True
+        else:
+            return False
+
     def getKeepLive(self, option=''):
         line = ''
         for ss in self.__headerSplitted:
@@ -172,7 +197,7 @@ class ResponsePacket:
                     else:
                         return lineSplitted[1][len('max') + 1 : ]
                 else:
-                    return 'invalid'
+                    return 'nil'
 
     def getHeaderInfo(self, fieldName):
         line = ''

@@ -44,7 +44,7 @@ class Proxy:
 
     '''
 
-    MAX_CONNECTION = 100 # number of simultaneous connections supported
+    MAX_CONNECTION = 200 # number of simultaneous connections supported
     freeIndexArr = []
     connectionThreads = []
 
@@ -70,6 +70,8 @@ class Proxy:
     @staticmethod
     def setFreeIndex(idx, flag):
         Proxy.freeIndexArr[idx] = flag
+        if Proxy.freeIndexArr[idx] == True: # confirm freed
+            print('Proxy:: setFreeIndex: index ' + str(idx) + ' is free')
 
     def listenConnection(self):
         while True:
@@ -84,6 +86,7 @@ class Proxy:
 
                     print('Proxy:: connection to client established')
             except KeyboardInterrupt:
+                # TODO implement quit routine
                 print('Proxy:: closing proxy')
                 break
 
