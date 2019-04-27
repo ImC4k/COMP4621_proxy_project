@@ -81,7 +81,7 @@ class CacheHandler:
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half
             encoding = rsps[0].getHeaderInfo('content-encoding')
             if '' in cacheFileNameSplitted:
-                print('CacheHandler:: cacheResponses: \'\\\\\' detected, not supported')
+                print('CacheHandler:: cacheResponses: \'//\' detected, not supported')
                 print('-------------------------')
                 print('CacheHandler:: not cached')
                 print('-------------------------')
@@ -107,10 +107,6 @@ class CacheHandler:
                 print('CacheHandler:: cacheResponse(): cacheFileName: ' + cacheFileName)
                 try:
                     with open(cacheFileName, 'wb') as cacheFile: # write as byte
-                        # if index == 0: # ResponsePacket object, contains header
-                        #     cacheFile.write(rsp.getPacketRaw())
-                        # else: # payload only
-                        #     cacheFile.write(rsp)
                         try:
                             cacheFile.write(rsp.getPacketRaw())
                         except AttributeError as e:
@@ -171,10 +167,6 @@ class CacheHandler:
                                     print('---------------------------------------------------------------')
                                     print('CacheHandler:: ' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(i))
                                     print('---------------------------------------------------------------')
-                                    # if rsps == []:
-                                    #     rsps.append(ResponsePacket.parsePacket(responseRaw))
-                                    # else:
-                                    #     rsps.append(responseRaw)
                                     try:
                                         rsps.append(ResponsePacket.parsePacket(responseRaw))
                                     except TypeError as e:
