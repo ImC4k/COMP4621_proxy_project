@@ -505,8 +505,8 @@ class SocketHandler:
             with open('banned_sites', 'r') as banned_sites_file:
                 SocketHandler.BANNED_SITES = banned_sites_file.read().split('\n')
         for site in SocketHandler.BANNED_SITES:
-            if site == '':
-                continue
+            if site == '***': # put *** as last line of black list file
+                break
             s = site.lower()
             rq = rqp.getHostName().lower().split(':')[0]
             try:
@@ -514,9 +514,6 @@ class SocketHandler:
                     return True
             except Exception as e:
                 pass
-                # print('s: ' + s)
-                # print('rq: ' + rq)
-                # raise e
         return False
 
     def setTimeout(self, id):
