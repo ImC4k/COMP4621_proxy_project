@@ -23,7 +23,7 @@ class ResponsePacket:
         parsePacket(packetRaw):                 param: (packetRaw : bytes)
                                                 takes entire raw packet, auto separation and initialize members
 
-        emptyPacket(rqp):                       creates 504 Gateway Timeout packet
+        emptyPacket(rqp):                       creates 404 Not Found packet
 
     Functions:
 
@@ -115,17 +115,14 @@ class ResponsePacket:
         '''
         version = rqp.getVersion()
         date = rqp.getHeaderInfo('date')
-        packet = version + ' 504 Gateway Timeout\r\n'
+        packet = version + ' 404 Not Found\r\n'
         if date != 'nil':
             packet += 'Date: ' + date + '\r\n'
         packet += '\r\n'
         packetRaw = packet.encode('ascii')
+        packetRaw += b'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>oops</title></head><body><h1>Oops</h1><h1>404 Not Found</h1></body></html>'
         rp = ResponsePacket.parsePacket(packetRaw)
         return rp
-
-    @classmethod
-    def forbiddenPacket(cls, rqp): # TODO create 403 forbidden packet for access control class
-        pass
 
     def setHeaderSplitted(self, headerSplitted):
         self.__headerSplitted = headerSplitted

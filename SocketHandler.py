@@ -64,6 +64,8 @@ class SocketHandler:
                                         use HTTPS connection instead of HTTP
                                         no caching, timeout etc, direct forwarding after CONNECT method
 
+        onBlackList(rqp):               returns true is the request website is on access control (blocked by me)
+
         setTimeout(id):                 if id matches timeoutThreadID, set timeout be True
 
     '''
@@ -71,6 +73,7 @@ class SocketHandler:
     BUFFER_SIZE = 8192 # 8KB
     HTTPS_PORT = 443
     HTTP_PORT = 80
+    BANNED_SITES = None
 
     def __init__(self, socket):
         self.__socket = socket
@@ -104,7 +107,19 @@ class SocketHandler:
                 continue
             rqp = RequestPacket.parsePacket(requestRaw)
             print('SocketHandler:: received data: \n' + rqp.getPacket('DEBUG') + '\nrequest packet end\n')
-            # AccessController.accessAllowed(rqp)
+
+            if self.onBlackList(rqp):
+                print('SocketHandler:: client attempted to access banned site: ' + rqp.getHostName())
+                self.__socket.send(ResponsePacket.emptyPacket(rqp).getPacketRaw())
+                self.__socket.close()
+                print('SocketHandler:: connection to client closed\n\n')
+                if serverSideSocket is not None:
+                    serverSideSocket.close()
+                    print('SocketHandler:: connection to server closed\n\n')
+                return
+            else:
+                print('SocketHandler:: client access ok: ' + rqp.getHostName())
+
             if rqp.getMethod().lower() == 'connect':
                 print('SocketHandler:: CONNECT method detected, using HTTPS protocol')
                 print('--------------')
@@ -343,8 +358,6 @@ class SocketHandler:
                     print('----------')
                 self.__respondToClient(rsps, serverSideSocket)
 
-            # self.__socket.close() # DEBUG
-            # return # DEBUG
             print('----------------------------------------------')
             print('SocketHandler:: packet is forwarded to client:')
             print('----------------------------------------------')
@@ -372,13 +385,6 @@ class SocketHandler:
                 print('SocketHandler:: connection to server closed\n\n')
                 break
 
-            # DEBUG, unconditionally close connection after a transmission
-            # self.__socket.close() # DEBUG
-            # print('SocketHandler:: connection to client closed\n\n') # DEBUG
-            # serverSideSocket.close() # DEBUG
-            # print('SocketHandler:: connection to server closed\n\n') # DEBUG
-            # break # DEBUG
-
             self.__maxTransmission -= 1
             print('SocketHandler:: transmission allowed remaining: ' + str(self.__maxTransmission))
         print('SocketHandler:: stopping')
@@ -398,7 +404,11 @@ class SocketHandler:
             serverPort = SocketHandler.HTTP_PORT
 
             serverSideSocket = socket(AF_INET, SOCK_STREAM)
-            serverSideSocket.connect((serverAddr, serverPort))
+            try:
+                serverSideSocket.connect((serverAddr, serverPort))
+            except TimeoutError as e:
+                print('SocketHandler:: requestToServer: server side socket timeout')
+                return []
         serverSideSocket.send(rqp.getPacketRaw())
         responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE) # blocking, should receive data
         if responseRaw is None:
@@ -419,7 +429,6 @@ class SocketHandler:
             while responseRaw[-len(b'0\r\n\r\n'):] != b'0\r\n\r\n':
                 try:
                     responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
-                    # receivedLength += len(responseRaw) # not used in loop
                 except Exception as e: # EAGAIN, no data received
                     sleep(1)
                     sleepCount += 1
@@ -446,51 +455,9 @@ class SocketHandler:
                     except TypeError as e:
                         rsps.append(responseRaw)
             print('SocketHandler:: requestToServer(): ended loop')
-            # ct = CacheThread('ADD', rqp, rsps) # DEBUG
-            # ct.start() # DEBUG
-            # ct.join() # DEBUG
-            # exit(0) # DEBUG
-        # elif rsp.responseCode() == '206': # chunked data in multiple packets
-        #     sleepCount = 0
-        #     while responseRaw[-len(b'\r\n\r\n'):] != b'\r\n\r\n':
-        #         try:
-        #             responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
-        #         except Exception as e: # EAGAIN, no data received
-        #             sleep(1)
-        #             sleepCount += 1
-        #             print('SocketHandler:: requestToServer(): sleep count: ' + str(sleepCount))
-        #             if sleepCount == 2:
-        #                 print('SocketHandler:: requestToServer(): Timeout')
-        #                 break
-        #             continue
-        #         sleepCount = 0 # reset sleepCount if new data is received
-        #         print('-----------------------------------------')
-        #         print('SocketHandler:: code 206 packet detected:')
-        #         print('-----------------------------------------')
-        #         if responseRaw  == b'': # same as not receiving anything, sleep and continue
-        #             sleep(1)
-        #             sleepCount += 1
-        #             continue
-        #         else:
-        #             rsp = ResponsePacket.parsePacket(responseRaw)
-        #             payload = rsp.getPayload()
-        #             rsps.append(payload) # NOTE: rsps will contain 1 ResponsePacket at first position, and raw data afterwards
         return rsps, serverSideSocket
 
     def __respondToClient(self, rsps, serverSideSocket):
-        # if rsps[0].responseCode() != '206':
-        #     self.__socket.send(rsps[0].getPacketRaw())
-        #     for data in rsps[1:]:
-        #         self.__socket.send(data)
-        # else:
-        #     for rsp in rsps:
-        #         self.__socket.send(rsp.getPacketRaw())
-
-
-        # for rsp in rsps:
-        #     self.__socket.send(rsp.getPacketRaw())
-
-
         for rsp in rsps:
             try:
                 self.__socket.send(rsp.getPacketRaw())
@@ -503,9 +470,9 @@ class SocketHandler:
                 except BrokenPipeError as e:
                     serverSideSocket.close()
                     print('SocketHandler:: connection to server closed\n\n')
-                except exception as e:
+                except Exception as e:
                     raise e
-            except exception as e:
+            except Exception as e:
                 raise e
 
     def establishHTTPSConnection(self, rqp):
@@ -533,6 +500,24 @@ class SocketHandler:
             except Exception as e: #EAGAIN
                 pass
 
+    def onBlackList(self, rqp):
+        if SocketHandler.BANNED_SITES is None:
+            with open('banned_sites', 'r') as banned_sites_file:
+                SocketHandler.BANNED_SITES = banned_sites_file.read().split('\n')
+        for site in SocketHandler.BANNED_SITES:
+            if site == '':
+                continue
+            s = site.lower()
+            rq = rqp.getHostName().lower().split(':')[0]
+            try:
+                if s == rq or gethostbyname(s) == gethostbyname(rq):
+                    return True
+            except Exception as e:
+                pass
+                # print('s: ' + s)
+                # print('rq: ' + rq)
+                # raise e
+        return False
 
     def setTimeout(self, id):
         if self.__timeoutThreadID == id:

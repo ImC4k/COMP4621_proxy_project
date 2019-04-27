@@ -73,7 +73,7 @@ class CacheHandler:
         cache response whenever no-store, private are not specified in cache-control
         because all cached response will be revalidated by proxy anyway
         '''
-        # TODO delete previous version if exist because new data may not overwrite all related files
+        CacheHandler.deleteFromCache(rqp)
 
         cacheOption = rsps[0].getHeaderInfo('cache-control').lower()
         cacheOptionSplitted = cacheOption.split(', ')
@@ -210,23 +210,6 @@ class CacheHandler:
                     print('----------------------------------------')
                     return rsps
 
-            # if entries[idx]['nil'] != 0: # last check if uncompressed file exists
-            #     numFiles = entries[idx]['nil']
-            #     rsps = []
-            #     for i in range(1, numFiles + 1):
-            #         try:
-            #             with open(CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + 'nil' + ', ' + str(i), 'rb') as responseFile:
-            #                 responseRaw = responseFile.read()
-            #             print('---------------------------------------------------------------')
-            #             print('CacheHandler:: ' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + 'nil' + ', ' + str(i))
-            #             print('---------------------------------------------------------------')
-            #             try:
-            #                 rsps.append(ResponsePacket.parsePacket(responseRaw))
-            #             except TypeError as e:
-            #                 rsps.append(responseRaw)
-            #         except Exception as e:
-            #             raise e
-            #     return rsps
         else:
             pass # fetching from cache only applies to GET method
             return None
