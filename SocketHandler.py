@@ -4,6 +4,7 @@ from ResponsePacket import ResponsePacket
 from CacheHandler import CacheHandler, CacheThread
 from TimeComparator import TimeComparator
 from time import sleep
+import errno
 
 
 
@@ -83,9 +84,22 @@ class SocketHandler:
         serverSideSocket = None
         while not self.__timeout and self.__maxTransmission > 0:
             try:
-                requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
+                requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE) #, MSG_DONTWAIT
+            except error as e:
+                if e == errno.EAGAIN:
+                    continue
+                else:
+                    # raise e
+                    print(e)
+                    self.__socket.close()
+                    print('SocketHandler:: connection to client closed\n\n')
+                    if serverSideSocket is not None:
+                        serverSideSocket.close()
+                        print('SocketHandler:: connection to server closed\n\n')
+                    break
+
             except Exception as e: # EAGAIN, no data received
-                continue
+                raise e
             if requestRaw == b'': # data received is empty
                 continue
             rqp = RequestPacket.parsePacket(requestRaw)
@@ -101,7 +115,12 @@ class SocketHandler:
             elif rqp.getMethod().lower() == 'get':
                 fetchedResponses = CacheHandler.fetchResponses(rqp)
                 if fetchedResponses is None: # no cache found
-                    rsps, serverSideSocket = self.requestToServer(rqp)
+                    try:
+                        rsps, serverSideSocket = self.requestToServer(rqp)
+                    except ValueError as e:
+                        self.__socket.close()
+                        print('SocketHandler:: connection to client closed\n\n')
+                        break
                     if rsps == []:
                         print('SocketHandler:: cannot receive response, forged a packet')
                         rsps.append(ResponsePacket.emptyPacket())
@@ -128,7 +147,12 @@ class SocketHandler:
                         print('------------------------------------------')
                         print('SocketHandler:: check if cache is updated:')
                         print('------------------------------------------')
-                        rsps, serverSideSocket = self.requestToServer(rqp)
+                        try:
+                            rsps, serverSideSocket = self.requestToServer(rqp)
+                        except ValueError as e:
+                            self.__socket.close()
+                            print('SocketHandler:: connection to client closed\n\n')
+                            break
                         if rsps == []:
                             print('SocketHandler:: cannot receive response, forged a packet')
                             rsps.append(ResponsePacket.emptyPacket())
@@ -186,7 +210,12 @@ class SocketHandler:
                             print('---------------------------------------------------------')
                             print('SocketHandler:: rqp > fetch, check if modified since rqp:')
                             print('---------------------------------------------------------')
-                            rsps, serverSideSocket = self.requestToServer(rqp)
+                            try:
+                                rsps, serverSideSocket = self.requestToServer(rqp)
+                            except ValueError as e:
+                                self.__socket.close()
+                                print('SocketHandler:: connection to client closed\n\n')
+                                break
                             if rsps == []:
                                 print('SocketHandler:: cannot receive response, forged a packet')
                                 rsps.append(ResponsePacket.emptyPacket())
@@ -242,7 +271,13 @@ class SocketHandler:
                             print('-----------------------------------------------------------')
                             print('SocketHandler:: fetch > rqp, check if modified since fetch:')
                             print('-----------------------------------------------------------')
-                            rsps, serverSideSocket = self.requestToServer(rqp)
+                            try:
+                                rsps, serverSideSocket = self.requestToServer(rqp)
+                            except ValueError as e:
+                                self.__socket.close()
+                                print('SocketHandler:: connection to client closed\n\n')
+                                break
+
                             if rsps == []:
                                 print('SocketHandler:: cannot receive response, forged a packet')
                                 rsps.append(ResponsePacket.emptyPacket())
@@ -294,7 +329,12 @@ class SocketHandler:
                                 self.__respondToClient(rsps, serverSideSocket)
 
             else: # not GET nor CONNECT, request from server and reply to client, no caching required
-                rsps, serverSideSocket = self.requestToServer(rqp)
+                try:
+                    rsps, serverSideSocket = self.requestToServer(rqp)
+                except ValueError as e:
+                    self.__socket.close()
+                    print('SocketHandler:: connection to client closed\n\n')
+                    break
                 if rsps == []:
                     print('SocketHandler:: cannot receive response, forged a packet')
                     rsps.append(ResponsePacket.emptyPacket())
@@ -353,7 +393,7 @@ class SocketHandler:
                 print('closing this connection')
                 self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
-                raise e
+                return []
 
             serverPort = SocketHandler.HTTP_PORT
 
@@ -453,12 +493,19 @@ class SocketHandler:
 
         for rsp in rsps:
             try:
-                try:
-                    self.__socket.send(rsp.getPacketRaw())
-                except AttributeError as e:
-                    self.__socket.send(rsp)
+                self.__socket.send(rsp.getPacketRaw())
             except BrokenPipeError as e:
                 serverSideSocket.close()
+                print('SocketHandler:: connection to server closed\n\n')
+            except AttributeError as e:
+                try:
+                    self.__socket.send(rsp)
+                except BrokenPipeError as e:
+                    serverSideSocket.close()
+                    print('SocketHandler:: connection to server closed\n\n')
+                except exception as e:
+                    raise e
+            except exception as e:
                 raise e
 
     def establishHTTPSConnection(self, rqp):

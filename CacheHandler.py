@@ -80,6 +80,12 @@ class CacheHandler:
         if 'no-store' not in cacheOptionSplitted and 'private' not in cacheOptionSplitted: # specified as public or the header field is not present
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half
             encoding = rsps[0].getHeaderInfo('content-encoding')
+            if '' in cacheFileNameSplitted:
+                print('CacheHandler:: cacheResponses: \'\\\\\' detected, not supported')
+                print('-------------------------')
+                print('CacheHandler:: not cached')
+                print('-------------------------')
+                return
             origin = os.getcwd()
             try: # ensure cache directory exists
                 os.chdir(CacheHandler.cacheFileDirectory)
