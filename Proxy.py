@@ -44,7 +44,7 @@ class Proxy:
 
     '''
 
-    MAX_CONNECTION = 200 # number of simultaneous connections supported
+    MAX_CONNECTION = 500 # number of simultaneous connections supported
     freeIndexArr = []
     connectionThreads = []
 
@@ -85,6 +85,8 @@ class Proxy:
                     Proxy.setFreeIndex(idx, False)
 
                     print('Proxy:: connection to client established')
+                else:
+                    print('Proxy:: connection thread limit reached')
             except KeyboardInterrupt:
                 # TODO implement quit routine
                 print('Proxy:: closing proxy')

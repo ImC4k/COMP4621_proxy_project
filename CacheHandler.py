@@ -2,7 +2,7 @@ import json # for cache_lookup_table
 import os # remove file os.remove(filename)
 from RequestPacket import RequestPacket
 from ResponsePacket import ResponsePacket
-
+import threading
 
 
 
@@ -25,6 +25,8 @@ class CacheHandler:
     Members:
 
         cacheFileDirectory:             directory name of all cached responses to be stored into
+
+        lookupTableRWLock:              a lock for lookup table, must acquire it before reading/ writing
 
     Constructor:
 
@@ -62,6 +64,7 @@ class CacheHandler:
     '''
 
     cacheFileDirectory = 'cache_responses/'
+    lookupTableRWLock = threading.Lock() # require sequential read/ write, otherwise may occur corruption/ data loss
 
     @staticmethod
     def cacheResponses(rqp, rsps):
@@ -95,15 +98,19 @@ class CacheHandler:
             for rsp in rsps: # cache each responses
                 index += 1
                 cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(index)
-                print('CacheHandler:: cacheFileName: ' + cacheFileName)
+                print('CacheHandler:: cacheResponse(): cacheFileName: ' + cacheFileName)
                 try:
                     with open(cacheFileName, 'wb') as cacheFile: # write as byte
+                        # if index == 0: # ResponsePacket object, contains header
+                        #     cacheFile.write(rsp.getPacketRaw())
+                        # else: # payload only
+                        #     cacheFile.write(rsp)
                         try:
                             cacheFile.write(rsp.getPacketRaw())
                         except AttributeError as e:
                             cacheFile.write(rsp)
                     print('---------------------------------------------------------------')
-                    print('CacheHandler:: response: ' + cacheFileNameFH + ', ' + str(index) + ' is cached')
+                    print('CacheHandler:: cacheResponse(): response: ' + cacheFileNameFH + ', ' + str(index) + ' is cached')
                     print('---------------------------------------------------------------')
                 except Exception as e:
                     raise e
@@ -123,9 +130,15 @@ class CacheHandler:
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
 
             try:
+                CacheHandler.lookupTableRWLock.acquire()
+                print('CacheHandler:: fetchResponses: acquired lock')
                 with open('cache_lookup_table.json', 'r') as table:
                     entries = json.load(table)
+                    print('CacheHandler:: fetchResponses: read cache_lookup_table')
+                CacheHandler.lookupTableRWLock.release()
+                print('CacheHandler:: fetchResponses: released lock')
             except Exception as e: # unable to open, meaning no such table, thus no cache
+                CacheHandler.lookupTableRWLock.release()
                 return None
             idx = CacheHandler.__entryExists(cacheFileNameFH, entries) # check cache entry
             if idx == -1: # no entry of such file exists
@@ -140,9 +153,9 @@ class CacheHandler:
             for encoding in encodingsSplitted:
                 if encoding == '*': # accept any encoding
                     for encoding in entries[idx]: # loop through key value pairs for the entry
-                        if encoding == 'cacheFileNameFH':
+                        if encoding == 'cacheFileNameFH': # this is not an encoding key-value pair, continue
                             continue
-                        if entries[idx][encoding] != 0:
+                        if entries[idx][encoding] != 0: # any one encoding that cached file is not 0, including 'nil'
                             numFiles = entries[idx][encoding]
                             rsps = [] # list of response packets
                             for i in range(1, numFiles + 1):
@@ -152,11 +165,14 @@ class CacheHandler:
                                     print('---------------------------------------------------------------')
                                     print('CacheHandler:: ' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(i))
                                     print('---------------------------------------------------------------')
-                                    if rsps == []:
+                                    # if rsps == []:
+                                    #     rsps.append(ResponsePacket.parsePacket(responseRaw))
+                                    # else:
+                                    #     rsps.append(responseRaw)
+                                    try:
                                         rsps.append(ResponsePacket.parsePacket(responseRaw))
-                                    else:
-                                        if rsps[0].responseCode() != '206':
-                                            rsps.append(responseRaw)
+                                    except TypeError as e:
+                                        rsps.append(responseRaw)
                                 except Exception as e:
                                     raise e
                             print('----------------------------------------')
@@ -176,11 +192,10 @@ class CacheHandler:
                             print('---------------------------------------------------------------')
                             print('CacheHandler:: ' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(i))
                             print('---------------------------------------------------------------')
-                            if rsps == []:
+                            try:
                                 rsps.append(ResponsePacket.parsePacket(responseRaw))
-                            else:
-                                if rsps[0].responseCode() != '206':
-                                    rsps.append(responseRaw)
+                            except TypeError as e:
+                                rsps.append(responseRaw)
                         except Exception as e:
                             print('CacheHandler:: fetchResponse cacheFileName: ' + CacheHandler.cacheFileDirectory + cacheFileNameFH+ ', ' + encoding + ', ' + str(i))
                             raise Exception('could not find entry that should be present')
@@ -189,36 +204,41 @@ class CacheHandler:
                     print('----------------------------------------')
                     return rsps
 
-            if entries[idx]['nil'] != 0: # last check if uncompressed file exists
-                numFiles = entries[idx]['nil']
-                rsps = []
-                for i in range(1, numFiles + 1):
-                    try:
-                        with open(CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + 'nil' + ', ' + str(i), 'rb') as responseFile:
-                            responseRaw = responseFile.read()
-                        print('---------------------------------------------------------------')
-                        print('CacheHandler:: ' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + 'nil' + ', ' + str(i))
-                        print('---------------------------------------------------------------')
-                        if rsps == []:
-                            rsps.append(ResponsePacket.parsePacket(responseRaw))
-                        else:
-                            if rsps[0].responseCode() != '206':
-                                rsps.append(responseRaw)
-                    except Exception as e:
-                        raise e
-                return rsps
+            # if entries[idx]['nil'] != 0: # last check if uncompressed file exists
+            #     numFiles = entries[idx]['nil']
+            #     rsps = []
+            #     for i in range(1, numFiles + 1):
+            #         try:
+            #             with open(CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + 'nil' + ', ' + str(i), 'rb') as responseFile:
+            #                 responseRaw = responseFile.read()
+            #             print('---------------------------------------------------------------')
+            #             print('CacheHandler:: ' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + 'nil' + ', ' + str(i))
+            #             print('---------------------------------------------------------------')
+            #             try:
+            #                 rsps.append(ResponsePacket.parsePacket(responseRaw))
+            #             except TypeError as e:
+            #                 rsps.append(responseRaw)
+            #         except Exception as e:
+            #             raise e
+            #     return rsps
         else:
             pass # fetching from cache only applies to GET method
             return None
 
     @staticmethod
-    def deleteFromCache(rqp): # TODO get number of files cached, delete them all
+    def deleteFromCache(rqp): # get number of files cached, delete them all
         cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
         try:
+            CacheHandler.lookupTableRWLock.acquire()
+            print('CacheHandler:: deleteFromCache: acquired lock')
             with open('cache_lookup_table.json', 'r') as table:
                 entries = json.load(table)
+                print('CacheHandler:: deleteFromCache: read cache_lookup_table')
+            CacheHandler.lookupTableRWLock.release()
+            print('CacheHandler:: deleteFromCache: released lock')
         except Exception as e: # unable to open, meaning no such table, thus no cache
-            raise Exception('CacheHandler:: deleteFromCache(): attempted to delete non-existing file')
+            CacheHandler.lookupTableRWLock.release()
+            raise Exception('CacheHandler:: deleteFromCache: attempted to delete non-existing file')
 
         idx = CacheHandler.__entryExists(cacheFileNameFH, entries)
         if idx != -1:
@@ -232,11 +252,14 @@ class CacheHandler:
                     cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(i)
                     try:
                         os.remove(cacheFileName)
+                        print('CacheHandler:: deleteFromCache: deleted file(s) from cache')
                     except Exception as e:
-                        raise Exception('CacheHandler:: deleteFromCache(): attempted to delete non-existing file')
+                        CacheHandler.lookupTableRWLock.release()
+                        raise Exception('CacheHandler:: deleteFromCache: attempted to delete non-existing file')
             try:
                 __updateLookup('DEL', cacheFileNameFH) # delete entire entry, because all encodings are deleted
             except Exception as e:
+                CacheHandler.lookupTableRWLock.release()
                 raise e
         else:
             pass # nothing to delete
@@ -247,15 +270,22 @@ class CacheHandler:
         ADD: add record/ entry to lookup table
         DEL: delete record/ entry from lookup table, ignores encoding, numFiles
         '''
+        print('CacheHandler:: __updateLookup: entering function')
+        CacheHandler.lookupTableRWLock.acquire()
+        print('CacheHandler:: __updateLookup: acquired lock')
         try:
             with open('cache_lookup_table.json', 'r') as table:
                 entries = json.load(table)
+                print('CacheHandler:: __updateLookup: opened cache_lookup_table')
+            idx = CacheHandler.__entryExists(cacheFileNameFH, entries)
         except FileNotFoundError as e: # first write to lookup table
             entries = []
+            idx = -1
         except Exception as e:
+            CacheHandler.lookupTableRWLock.release()
+            print('CacheHandler:: __updateLookup: released lock')
             raise e
 
-        idx = CacheHandler.__entryExists(cacheFileNameFH, entries)
 
         if method == 'ADD':
             if idx == -1: # no existing entry found
@@ -263,49 +293,59 @@ class CacheHandler:
                 try:
                     newEntry.update({encoding : numFiles})
                 except Exception as e:
-                    newEntry.add({encoding : numFiles})
+                    CacheHandler.lookupTableRWLock.release()
+                    print('CacheHandler:: __updateLookup: released lock')
+                    raise e
                 entries.append(newEntry)
             else: # entry found
                 try:
                     entries[idx].update({encoding : numFiles})
                 except Exception as e:
-                    entries[idx].add({encoding : numFiles})
+                    CacheHandler.lookupTableRWLock.release()
+                    print('CacheHandler:: __updateLookup: released lock')
+                    raise e
         elif method == 'DEL':
             if idx == -1: # something wrong
+                CacheHandler.lookupTableRWLock.release()
+                print('CacheHandler:: __updateLookup: released lock')
                 raise Exception('CacheHandler:: __updateLookup(): attempted to delete non-existing entry')
             else:
-                # deleteEntryFlag = True
-                # entries[idx].update({encoding : 0})
-                # for encoding in entries[idx]: # if there exists a record with an encoding stored in cache, no need to delete
-                #     if encoding == 'cacheFileNameFH':
-                #         continue
-                #     if entries[idx][encoding] != 0:
-                #         deleteEntryFlag = False
-                #         break
-                # if deleteEntryFlag: # no more cached response for this cacheFileNameFH
-                #     del entries[idx]
                 del entries[idx] # delete entire entry
         else:
-            print('CacheHandler:: __updateLookup(): invalid method: ' + method)
-            return
+            CacheHandler.lookupTableRWLock.release()
+            print('CacheHandler:: __updateLookup: released lock')
+            raise Exception('CacheHandler:: __updateLookup(): invalid method: ' + method)
 
         # replace lookup table
         try:
             os.remove('cache_lookup_table.json') # delete if exists
-        except FileNotFoundError as e:
+            print('CacheHandler:: __updateLookup: deleted cache_lookup_table')
+        except FileNotFoundError as e: # originally no such file
             pass # no deletion if not found
         except Exception as e: # raise exception for other exceptions
+            CacheHandler.lookupTableRWLock.release()
+            print('CacheHandler:: __updateLookup: released lock')
             raise e
         with open('cache_lookup_table.json', 'w') as table: # write new lookup table
             json.dump(entries, table, indent=4)
+            print('CacheHandler:: __updateLookup: new cache_lookup_table written')
+        CacheHandler.lookupTableRWLock.release()
+        print('CacheHandler:: __updateLookup: released lock')
+        print('CacheHandler:: __updateLookup: quitting function')
 
     @staticmethod
     def __entryExists(cacheFileNameFH, entries=[]):
         if entries == []:
             try:
+                CacheHandler.lookupTableRWLock.acquire()
+                print('CacheHandler:: __entryExists: acquired lock')
                 with open('cache_lookup_table.json', 'r') as table:
                     entries = json.load(table)
-            except Exception as e: # unable to open, meaning no such table, thus no cache
+                CacheHandler.lookupTableRWLock.release()
+                print('CacheHandler:: __entryExists: released lock')
+            except FileNotFoundError as e: # unable to open, meaning no such table, thus no cache
+                CacheHandler.lookupTableRWLock.release()
+                print('CacheHandler:: __entryExists: released lock')
                 return -1
         for idx in range(len(entries)):
             if entries[idx]['cacheFileNameFH'] == cacheFileNameFH:
@@ -313,7 +353,7 @@ class CacheHandler:
         return -1
 
     @staticmethod
-    def __generateJSON(cacheFileNameFH):
+    def __generateJSON(cacheFileNameFH): # TODO see if template can be reduced
         object = {
             "cacheFileNameFH" : cacheFileNameFH,
             "gzip" : 0,

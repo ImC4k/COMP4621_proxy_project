@@ -82,6 +82,8 @@ class ResponsePacket:
         print('ResponsePacket:: received packet:')
         print(packetRaw)
         print('\n\n')
+        if packetRaw[0:len(b'HTTP')].lower() != b'http': # this raw data should be payload only, don't wrap as ResponsePacket, raise TypeError exception
+            raise TypeError
         rp = ResponsePacket()
         packetRawSplitted = packetRaw.split(b'\r\n\r\n')
         if len(packetRawSplitted) == 1:
@@ -155,8 +157,7 @@ class ResponsePacket:
     def isLastPacket(self):
         if self.__isLastPacket == '':
             if self.isChunked():
-                payloadSplitted = self.__payload.split(b'\r\n')
-                if payloadSplitted[:len(b'0\r\n\r\n')] == b'0\r\n\r\n':
+                if self.__payload[-len(b'\r\n\r\n'):] == b'\r\n\r\n':
                     self.__isLastPacket = True
                 else:
                     self.__isLastPacket = False
