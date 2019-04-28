@@ -79,9 +79,9 @@ class ResponsePacket:
         meaning there exists 1 header, multiple payload
         mission: reform into multiple packets, return the list of ResponsePacket objects
         '''
-        print('ResponsePacket:: received packet:')
-        print(packetRaw)
-        print('\n\n')
+        # print('ResponsePacket:: received packet:')
+        # print(packetRaw)
+        # print('\n\n')
         if packetRaw[0:len(b'HTTP')].lower() != b'http': # this raw data should be payload only, don't wrap as ResponsePacket, raise TypeError exception
             raise TypeError
         rp = ResponsePacket()

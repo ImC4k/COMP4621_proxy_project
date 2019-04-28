@@ -89,7 +89,14 @@ class Proxy:
                     print('Proxy:: connection thread limit reached')
             except KeyboardInterrupt:
                 # TODO implement quit routine
-                print('Proxy:: closing proxy')
+                for i in range(Proxy.MAX_CONNECTION): # call close connection, dont wait for child processes here
+                    if not Proxy.freeIndexArr[i]:
+                        Proxy.connectionThreads[i].closeConnection()
+
+                for i in range(Proxy.MAX_CONNECTION): # wait for all child processes
+                    if not Proxy.freeIndexArr[i]:
+                        Proxy.connectionThreads[i].join()
+                print('Proxy:: closing proxy') # after joining all processes, quit function
                 break
 
 
@@ -140,8 +147,12 @@ class ConnectionThread(threading.Thread):
         self.idx = idx
 
     def run(self):
-        print('ConnectionThread:: thread at ' + str(self.idx) + ' starting')
+        print('ConnectionThread:: thread id: ' + str(self.idx) + ' starting')
         self.socketHandler.handleRequest()
-        print('ConnectionThread:: thread at ' + str(self.idx) + ' ending')
+        print('ConnectionThread:: thread id: ' + str(self.idx) + ' ending')
         Proxy.setFreeIndex(self.idx, True)
-        print('ConnectionThread:: index ' + str(self.idx) + ' in Proxy class is set free')
+        print('ConnectionThread:: thread id: ' + str(self.idx) + ' in Proxy class is set free')
+
+    def closeConnection(self):
+        self.socketHandler.closeConnection()
+        print('ConnectionThread: thread id: ' + str(self.idx) + ' manual close initiated')

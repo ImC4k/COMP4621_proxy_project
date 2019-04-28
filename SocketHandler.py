@@ -5,6 +5,7 @@ from CacheHandler import CacheHandler, CacheThread
 from TimeComparator import TimeComparator
 from time import sleep
 import errno
+import threading
 
 
 
@@ -40,6 +41,8 @@ class SocketHandler:
         maxTransmission:                number of transmissions this connection can handle (default 100)
 
         isFirstResponse:                true if first response packet, set maxTransmission, connectionType
+
+        timerThreadRunning:             a flag to close all timer thread attached to this socket handler
 
     Constructor:
 
@@ -81,6 +84,8 @@ class SocketHandler:
         self.__timeoutThreadID = -1
         self.__maxTransmission = 100
         self.__isFirstResponse = True
+        self.__timerThreadRunning = threading.Event()
+        self.__timerThreadRunning.set()
         print('SocketHandler:: Socket handler initialized')
 
     def handleRequest(self):
@@ -106,7 +111,7 @@ class SocketHandler:
             if requestRaw == b'': # data received is empty
                 continue
             rqp = RequestPacket.parsePacket(requestRaw)
-            print('SocketHandler:: received data: \n' + rqp.getPacket('DEBUG') + '\nrequest packet end\n')
+            # print('SocketHandler:: received data: \n' + rqp.getPacket('DEBUG') + '\nrequest packet end\n')
 
             if self.onBlackList(rqp):
                 print('SocketHandler:: client attempted to access banned site: ' + rqp.getHostName())
@@ -365,7 +370,7 @@ class SocketHandler:
             if time == 'nil': # default timeout 100s
                 time = '20'
             self.__timeoutThreadID += 1
-            timer = TimerThread(self.__timeoutThreadID, int(time), self)
+            timer = TimerThread(self.__timeoutThreadID, int(time), self, self.__timerThreadRunning)
             print('SocketHandler:: timeout set for ' + time + ' seconds')
             timer.start()
 
@@ -387,6 +392,12 @@ class SocketHandler:
 
             self.__maxTransmission -= 1
             print('SocketHandler:: transmission allowed remaining: ' + str(self.__maxTransmission))
+        # loop end, close sockets
+        self.__socket.close()
+        print('SocketHandler:: connection to client closed\n\n')
+        if serverSideSocket is not None:
+            serverSideSocket.close()
+            print('SocketHandler:: connection to server closed\n\n')
         print('SocketHandler:: stopping')
 
     def requestToServer(self, rqp, serverSideSocket = ''):
@@ -487,7 +498,7 @@ class SocketHandler:
             raise e
         self.__socket.send(b'HTTP/1.1 200 Connection Established\r\n\r\n')
 
-        while True:
+        while True and not self.__timeout:
             try:
                 requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
                 serverSideSocket.send(requestRaw)
@@ -520,8 +531,9 @@ class SocketHandler:
         if self.__timeoutThreadID == id:
             self.__timeout = True
 
-
-
+    def closeConnection(self):
+        self.__timerThreadRunning.clear()
+        self.__timeout = True
 
 
 
@@ -563,16 +575,25 @@ class TimerThread(threading.Thread):
                                     when finish, set connectionThread.timeout = True
     '''
 
-    def __init__(self, id, time, socketHandler):
+    def __init__(self, id, time, socketHandler, isRunning):
         threading.Thread.__init__(self)
         self.__id = id
         self.__time = time
         self.__socketHandler = socketHandler
+        self.__isRunning = isRunning
 
     def run(self):
-        sleep(self.__time)
-        print('TimeThread:: timeout for ' + str(self.__id) + ' ends')
-        try:
-            self.__socketHandler.setTimeout(self.__id)
-        except Exception as e:
-            pass
+        # sleep(self.__time)
+        sleepCount = 0
+        while sleepCount != self.__time and self.__isRunning.is_set():
+            sleep(1)
+            sleepCount += 1
+        if sleepCount == self.__time: # time out
+            print('TimerThread:: timeout for ' + str(self.__id) + ' ends')
+            try:
+                self.__socketHandler.setTimeout(self.__id)
+            except Exception as e:
+                pass
+
+        else: # manual stop running
+            print('Timer cancelled')

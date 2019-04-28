@@ -74,8 +74,8 @@ class RequestPacket:
 
     @classmethod
     def parsePacket(cls, packetRaw):
-        print('RequestPacket:: received packet:')
-        print(packetRaw)
+        # print('RequestPacket:: received packet:')
+        # print(packetRaw)
         print('\n\n')
         rp = RequestPacket()
         packetRawSplitted = packetRaw.split(b'\r\n\r\n')
@@ -85,7 +85,7 @@ class RequestPacket:
             headerRaw, payload = packetRawSplitted
             rp.setPayload(payload)
         else:
-            print('RequestPacket:: strange number of values unpacket: ' + str(len(packetRawSplitted)))
+            raise Exception('RequestPacket:: strange number of values unpacket: ' + str(len(packetRawSplitted)))
         header = headerRaw.decode('ascii')
         headerSplitted = header.split('\r\n')
         rp.setRequestLine(headerSplitted[0])
@@ -140,7 +140,7 @@ class RequestPacket:
                 url = url[1:] # shift one character until '/detectportal.firefox.com/success.txt'
             url = url[1:] # shift one more time to 'detectportal.firefox.com/success.txt'
             filePath = url[len(self.getHostName()):]
-            print('RequestPacket:: filePath requested is: ' + filePath) # '/success.txt'
+            # print('RequestPacket:: filePath requested is: ' + filePath) # '/success.txt'
             self.__filePath = filePath
             return filePath
         else:
