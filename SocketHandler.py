@@ -515,13 +515,15 @@ class SocketHandler:
         if SocketHandler.BANNED_SITES is None:
             with open('banned_sites', 'r') as banned_sites_file:
                 SocketHandler.BANNED_SITES = banned_sites_file.read().split('\n')
+
+        rq = rqp.getHostName().lower().split(':')[0]
+        rqHost = gethostbyname(rq)
         for site in SocketHandler.BANNED_SITES:
             if site == '***': # put *** as last line of black list file
                 break
             s = site.lower()
-            rq = rqp.getHostName().lower().split(':')[0]
             try:
-                if s == rq or gethostbyname(s) == gethostbyname(rq):
+                if s == rq or gethostbyname(s) == rqHost:
                     return True
             except Exception as e:
                 pass
