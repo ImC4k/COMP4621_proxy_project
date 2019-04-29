@@ -502,14 +502,33 @@ class SocketHandler:
             try:
                 requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
                 serverSideSocket.send(requestRaw)
-            except Exception as e: #EAGAIN
+            except BlockingIOError as e:
                 pass
+            except ConnectionResetError as e:
+                self.__socket.close()
+                print('SocketHandler:: connection to client closed\n\n')
+                serverSideSocket.close()
+                print('SocketHandler:: connection to server closed\n\n')
+                return
+            except BrokenPipeError as e:
+                self.__socket.close()
+                print('SocketHandler:: connection to client closed\n\n')
+            except Exception as e: #EAGAIN
+                raise e
 
             try:
                 responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
                 self.__socket.send(responseRaw)
-            except Exception as e: #EAGAIN
+            except BlockingIOError as e:
                 pass
+            except ConnectionResetError as e:
+                self.__socket.close()
+                print('SocketHandler:: connection to client closed\n\n')
+                serverSideSocket.close()
+                print('SocketHandler:: connection to server closed\n\n')
+                return
+            except Exception as e: #EAGAIN
+                raise e
 
     def onBlackList(self, rqp):
         if SocketHandler.BANNED_SITES is None:

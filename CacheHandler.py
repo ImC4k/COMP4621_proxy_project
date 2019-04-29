@@ -241,7 +241,6 @@ class CacheHandler:
                     try:
                         os.remove(cacheFileName)
                     except Exception as e:
-                        CacheHandler.lookupTableRWLock.release()
                         raise Exception('CacheHandler:: deleteFromCache: lookup table and data mismatch -> Corruption detected')
             try:
                 CacheHandler.__updateLookup('DEL', cacheFileNameFH) # delete entire entry, because all encodings are deleted
