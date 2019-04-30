@@ -482,6 +482,9 @@ class SocketHandler:
                     serverSideSocket.close()
                     print('SocketHandler:: connection to server closed\n\n')
                 except Exception as e:
+                    print('SocketHandler:: __respondToClient: rsp is')
+                    print(rsp)
+                    print('SocketHandler:: __respondToClient: rsp end')
                     raise e
             except Exception as e:
                 raise e

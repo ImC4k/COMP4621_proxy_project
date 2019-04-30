@@ -90,11 +90,12 @@ class CacheHandler:
                 print('-------------------------')
                 return
             origin = os.getcwd()
+            CacheHandler.lookupTableRWLock.acquire() # make sure no one is writing to a lookup table when changing directory
             try: # ensure cache directory exists
-                os.chdir(CacheHandler.cacheFileDirectory)
+                os.chdir(origin + '/' + CacheHandler.cacheFileDirectory)
             except FileNotFoundError as e:
-                os.mkdir(CacheHandler.cacheFileDirectory)
-                os.chdir(CacheHandler.cacheFileDirectory)
+                os.mkdir(origin + '/' + CacheHandler.cacheFileDirectory)
+                os.chdir(origin + '/' + CacheHandler.cacheFileDirectory)
             for index in range(len(cacheFileNameSplitted) - 1): # ensure layers of directory exists
                 try:
                     os.chdir(cacheFileNameSplitted[index])
@@ -102,6 +103,7 @@ class CacheHandler:
                     os.mkdir(cacheFileNameSplitted[index])
                     os.chdir(cacheFileNameSplitted[index])
             os.chdir(origin) # go back to project root
+            CacheHandler.lookupTableRWLock.release()
 
             index = 0
             for rsp in rsps: # cache each responses
