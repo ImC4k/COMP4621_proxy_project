@@ -76,17 +76,19 @@ class Proxy:
     def listenConnection(self):
         while True:
             try:
+                clientSideSocket, addr = self.welcomeSocket.accept()
                 idx = Proxy.getFreeIndex(self)
                 if idx != -1:
-                    clientSideSocket, addr = self.welcomeSocket.accept()
                     clientThread = ConnectionThread(clientSideSocket, idx)
                     clientThread.start()
                     Proxy.connectionThreads[idx] = clientThread
                     Proxy.setFreeIndex(idx, False)
-
                     print('Proxy:: connection to client established')
                 else:
                     print('Proxy:: connection thread limit reached')
+                    clientSideSocket.close()
+                    print('Proxy:: connection closed')
+
             except KeyboardInterrupt:
                 # TODO implement quit routine
                 for i in range(Proxy.MAX_CONNECTION): # call close connection, dont wait for child processes here

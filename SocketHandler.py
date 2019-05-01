@@ -111,7 +111,7 @@ class SocketHandler:
             if requestRaw == b'': # data received is empty
                 continue
             rqp = RequestPacket.parsePacket(requestRaw)
-            # print('SocketHandler:: received data: \n' + rqp.getPacket('DEBUG') + '\nrequest packet end\n')
+            print('SocketHandler:: received request: \n' + rqp.getPacket('DEBUG') + '\nrequest packet end\n')
 
             if self.onBlackList(rqp):
                 print('SocketHandler:: client attempted to access banned site: ' + rqp.getHostName())
@@ -287,7 +287,7 @@ class SocketHandler:
                                 self.__respondToClient(rsps, serverSideSocket)
 
                         else: # fetchTime > rqpTime
-                            rqp.modifyTime(fetchTime)
+                            rqp.modifyTime(fetchTime.toString())
                             print('-----------------------------------------------------------')
                             print('SocketHandler:: fetch > rqp, check if modified since fetch:')
                             print('-----------------------------------------------------------')
@@ -404,15 +404,18 @@ class SocketHandler:
         rsps = [] # responses to be returned
         if serverSideSocket == '':
             try:
-                serverAddr = gethostbyname(rqp.getHostName())
+                tempHost = rqp.getHostName().split(':')
+                serverAddr = gethostbyname(tempHost[0])
             except Exception as e:
                 print('SocketHandler:: requestToServer: failed to obtain ip for host server')
                 print('closing this connection')
                 self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
                 return []
-
-            serverPort = SocketHandler.HTTP_PORT
+            if len(tempHost) == 2:
+                serverPort = int(tempHost[1])
+            else:
+                serverPort = SocketHandler.HTTP_PORT
 
             serverSideSocket = socket(AF_INET, SOCK_STREAM)
             try:
@@ -491,8 +494,12 @@ class SocketHandler:
 
     def establishHTTPSConnection(self, rqp):
 
-        serverAddr = gethostbyname(rqp.getHostName())
-        serverPort = SocketHandler.HTTPS_PORT
+        tempHost = rqp.getHostName().split(':')
+        serverAddr = gethostbyname(tempHost[0])
+        if len(tempHost) == 2:
+            serverPort = int(tempHost[1])
+        else:
+            serverPort = SocketHandler.HTTPS_PORT
         serverSideSocket = socket(AF_INET, SOCK_STREAM)
         try:
             serverSideSocket.connect((serverAddr, serverPort))
@@ -545,7 +552,11 @@ class SocketHandler:
                 break
             s = site.lower()
             try:
-                if s == rq or gethostbyname(s) == rqHost:
+                if s == rq:
+                    print('SocketHandler:: onBlackList: banned by name')
+                    return True
+                elif gethostbyname(s) == rqHost:
+                    print('SocketHandler:: onBlackList: banned by IP')
                     return True
             except Exception as e:
                 pass

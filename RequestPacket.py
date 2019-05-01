@@ -166,12 +166,13 @@ class RequestPacket:
                 hostLine = ss
                 break
         hostLineSplitted = hostLine.split(' ')
-        if self.getMethod() == 'CONNECT':
-            # print('\nRequestPacket:: host is ' + hostLineSplitted[1][:-len(':443')])
-            return hostLineSplitted[1][:-len(':443')]
-        else:
-            # print('\nRequestPacket:: host is ' + hostLineSplitted[1])
-            return hostLineSplitted[1]
+        # if self.getMethod() == 'CONNECT':
+        #     # print('\nRequestPacket:: host is ' + hostLineSplitted[1][:-len(':443')])
+        #     return hostLineSplitted[1][:-len(':443')]
+        # else:
+        #     # print('\nRequestPacket:: host is ' + hostLineSplitted[1])
+        #     return hostLineSplitted[1]
+        return hostLineSplitted[1]
 
     def getMethod(self):
         if self.__method == '':
