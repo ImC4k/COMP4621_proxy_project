@@ -84,8 +84,8 @@ class SocketHandler:
         self.__timeoutThreadID = -1
         self.__maxTransmission = 100
         self.__isFirstResponse = True
-        self.__timerThreadRunning = threading.Event()
-        self.__timerThreadRunning.set()
+        self.__threadRunning = threading.Event()
+        self.__threadRunning.set()
         print('SocketHandler:: Socket handler initialized')
 
     def handleRequest(self):
@@ -370,7 +370,7 @@ class SocketHandler:
             if time == 'nil': # default timeout 100s
                 time = '20'
             self.__timeoutThreadID += 1
-            timer = TimerThread(self.__timeoutThreadID, int(time), self, self.__timerThreadRunning)
+            timer = TimerThread(self.__timeoutThreadID, int(time), self, self.__threadRunning)
             print('SocketHandler:: timeout set for ' + time + ' seconds')
             timer.start()
 
@@ -546,7 +546,11 @@ class SocketHandler:
                 SocketHandler.BANNED_SITES = banned_sites_file.read().split('\n')
 
         rq = rqp.getHostName().lower().split(':')[0]
-        rqHost = gethostbyname(rq)
+        try:
+            rqHost = gethostbyname(rq)
+        except Exception as e:
+            print('SocketHandler:: onBlackList: IP not found: ' + rq)
+            return False
         for site in SocketHandler.BANNED_SITES:
             if site == '***': # put *** as last line of black list file
                 break

@@ -89,6 +89,29 @@ class CacheHandler:
                 print('CacheHandler:: not cached')
                 print('-------------------------')
                 return
+            expiry = 'nil' # default expiration is nil
+            if 'must-revalidate' in cacheOptionSplitted or 'proxy-revalidate' in cacheOptionSplitted:
+                pass # don't do anything on expiry if must revalidate
+            else: # TODO
+                for option in cacheOptionSplitted:
+                    if option[0:len('max-age')].lower == 'max-age':
+                        secondStr = option.split('=')[1]
+                        if rsp[0].getHeaderInfo('date') == 'nil':
+                            expiry = (TimeComparator.currentTime() + secondStr).toString()
+                        else:
+                            expiry = (TimeComparator(rsps[0].getHeaderInfo('date')) + secondStr).toString()
+                        break
+
+                for option in cacheOptionSplitted: # overwrite expiry from max-age with s-maxage
+                    if option[0:len('s-maxage')].lower == 's-maxage':
+                        secondStr = option.split('=')[1]
+                        if rsp[0].getHeaderInfo('date') == 'nil':
+                            expiry = (TimeComparator.currentTime() + secondStr).toString()
+                        else:
+                            expiry = (TimeComparator(rsps[0].getHeaderInfo('date')) + secondStr).toString()
+                        break
+
+
             origin = os.getcwd()
             CacheHandler.lookupTableRWLock.acquire() # make sure no one is writing to a lookup table when changing directory
             try: # ensure cache directory exists
@@ -125,7 +148,7 @@ class CacheHandler:
             print('CacheHandler:: cacheResponse(): file(s) are cached')
             print('---------------------------------------------------------------')
             try:
-                CacheHandler.__updateLookup('ADD', cacheFileNameFH, encoding, index)
+                CacheHandler.__updateLookup('ADD', cacheFileNameFH, encoding, index, expiry)
             except Exception as e:
                 raise e
         else:
@@ -163,7 +186,7 @@ class CacheHandler:
             for encoding in encodingsSplitted:
                 if encoding == '*': # accept any encoding
                     for encoding in entries[idx]: # loop through key value pairs for the entry
-                        if encoding == 'cacheFileNameFH': # this is not an encoding key-value pair, continue
+                        if encoding == 'cacheFileNameFH' or encoding == 'expiry': # this is not an encoding key-value pair, continue
                             continue
                         if entries[idx][encoding] != 0: # any one encoding that cached file is not 0, including 'nil'
                             numFiles = entries[idx][encoding]
@@ -243,6 +266,7 @@ class CacheHandler:
                     try:
                         os.remove(cacheFileName)
                     except Exception as e:
+                        print('CacheHandler:: deleteFromCache: FH: ' + cacheFileNameFH)
                         raise Exception('CacheHandler:: deleteFromCache: lookup table and data mismatch -> Corruption detected')
             try:
                 CacheHandler.__updateLookup('DEL', cacheFileNameFH) # delete entire entry, because all encodings are deleted
@@ -252,7 +276,7 @@ class CacheHandler:
             pass # nothing to delete
 
     @staticmethod
-    def __updateLookup(method, cacheFileNameFH, encoding='', numFiles=''):
+    def __updateLookup(method, cacheFileNameFH, encoding='', numFiles='', expiry='nil'):
         '''
         ADD: add record/ entry to lookup table
         DEL: delete record/ entry from lookup table, ignores encoding, numFiles
@@ -280,6 +304,7 @@ class CacheHandler:
                 newEntry = CacheHandler.__generateJSON(cacheFileNameFH) # create new entry
                 try:
                     newEntry.update({encoding : numFiles})
+                    newEntry.update({expiry : expiry})
                 except Exception as e:
                     CacheHandler.lookupTableRWLock.release()
                     # print('CacheHandler:: __updateLookup: released lock')
@@ -344,6 +369,7 @@ class CacheHandler:
     def __generateJSON(cacheFileNameFH): # TODO see if template can be reduced
         object = {
             "cacheFileNameFH" : cacheFileNameFH,
+            "expiry" : "nil",
             "gzip" : 0,
             "compress" : 0,
             "deflate" : 0,
