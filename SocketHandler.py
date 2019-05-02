@@ -134,6 +134,10 @@ class SocketHandler:
                 return
             elif rqp.getMethod().lower() == 'get':
                 fetchedResponses, expiry = CacheHandler.fetchResponses(rqp)
+                # ret = CacheHandler.fetchResponses(rqp)
+                # print('SocketHandler:: handleRequest: ret: ' + str(ret))
+                # fetchedResponses = ret[0]
+                # expiry = ret[1]
                 if fetchedResponses is None: # no cache found PATH A
                     try:
                         rsps, serverSideSocket = self.requestToServer(rqp)
@@ -143,8 +147,9 @@ class SocketHandler:
                         break
                     if rsps == []:
                         print('SocketHandler:: cannot receive response, forged a packet')
-                        rsps.append(ResponsePacket.emptyPacket())
-                    print('SocketHandler:: received response 1: \n' + rsps[0].getPacket('DEBUG') + '\nresponse packet end\n')
+                        rsps.append(ResponsePacket.emptyPacket(rqp))
+                    else:
+                        print('SocketHandler:: received response 1: \n' + rsps[0].getPacket('DEBUG') + '\nresponse packet end\n')
                     if rsps[0].responseCode() == '200' or rsps[0].responseCode() == '206':
                         print('---------------------------------')
                         print('SocketHandler:: caching response:')
@@ -171,7 +176,7 @@ class SocketHandler:
                             print('SocketHandler:: handleRequest: error encountered, ending connection')
                             break
                     else: # PATH BB
-                        if expiry != 'nil': # PATH BBA
+                        if expiry is not None  and expiry != 'nil': # PATH BBA
                             currentTime = TimeComparator.currentTime()
                             expiryTime = TimeComparator(expiry)
                             if expiryTime > currentTime: # packet cached has not expired yet PATH BBAA
@@ -313,9 +318,6 @@ class SocketHandler:
                 serverAddr = gethostbyname(tempHost[0])
             except Exception as e:
                 print('SocketHandler:: requestToServer: failed to obtain ip for host server')
-                print('closing this connection')
-                self.__socket.close()
-                print('SocketHandler:: connection to client closed\n\n')
                 return [], None
             if len(tempHost) == 2:
                 serverPort = int(tempHost[1])
@@ -401,8 +403,12 @@ class SocketHandler:
 
     def establishHTTPSConnection(self, rqp):
 
-        tempHost = rqp.getHostName().split(':')
-        serverAddr = gethostbyname(tempHost[0])
+        try:
+            tempHost = rqp.getHostName().split(':')
+            serverAddr = gethostbyname(tempHost[0])
+        except Exception as e:
+            print('SocketHandler:: requestToServer: failed to obtain ip for host server')
+            return
         if len(tempHost) == 2:
             serverPort = int(tempHost[1])
         else:
@@ -415,7 +421,7 @@ class SocketHandler:
             raise e
         self.__socket.send(b'HTTP/1.1 200 Connection Established\r\n\r\n')
 
-        while True and not self.__timeout:
+        while not self.__timeout:
             try:
                 requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
                 serverSideSocket.send(requestRaw)
@@ -443,6 +449,9 @@ class SocketHandler:
                 print('SocketHandler:: connection to client closed\n\n')
                 serverSideSocket.close()
                 print('SocketHandler:: connection to server closed\n\n')
+                return
+            except BrokenPipeError as e:
+                print('SocketHandler:: connection closed by client, broken pipe, closing connection')
                 return
             except Exception as e: #EAGAIN
                 raise e

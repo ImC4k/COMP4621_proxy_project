@@ -78,10 +78,16 @@ class CacheHandler:
         except FileNotFoundError as e:
             pass
 
-        cacheOption = rsps[0].getHeaderInfo('cache-control').lower()
-        cacheOptionSplitted = cacheOption.split(', ')
+        cacheOption = rsps[0].getHeaderInfo('cache-control').lower() # TODO
+        cacheOptionSplitted = cacheOption.split(',')
+        for i in range(len(cacheOptionSplitted)):
+            cacheOptionSplitted[i] = cacheOptionSplitted[i].strip()
+        print('CacheHandler:: cacheResponses: cacheOptionSplitted: ' + str(cacheOptionSplitted))
         if 'no-store' not in cacheOptionSplitted and 'private' not in cacheOptionSplitted: # specified as public or the header field is not present
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half
+            if len(cacheFileNameFH) > 255:
+                print('CacheHandler:: cacheResponses: file name too long, not caching')
+                return
             encoding = rsps[0].getHeaderInfo('content-encoding')
             expiry = 'nil' # default expiration is nil
             if '' in cacheFileNameSplitted:
@@ -96,8 +102,10 @@ class CacheHandler:
                         secondStr = option.split('=')[1]
                         if rsp[0].getHeaderInfo('date') == 'nil':
                             expiry = (TimeComparator.currentTime() + secondStr).toString()
+                            print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                         else:
                             expiry = (TimeComparator(rsps[0].getHeaderInfo('date')) + secondStr).toString()
+                            print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                         break
 
                 for option in cacheOptionSplitted: # overwrite expiry from max-age with s-maxage
@@ -105,13 +113,16 @@ class CacheHandler:
                         secondStr = option.split('=')[1]
                         if rsp[0].getHeaderInfo('date') == 'nil':
                             expiry = (TimeComparator.currentTime() + secondStr).toString()
+                            print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                         else:
                             expiry = (TimeComparator(rsps[0].getHeaderInfo('date')) + secondStr).toString()
+                            print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                         break
 
                 for option in cacheOptionSplitted: # don't do anything on expiry if must revalidate
                     if option == 'must-revalidate' or option == 'proxy-revalidate' or option == 'no-cache':
                         expiry = 'nil' # overwrite expiry back to 'nil'
+                        break
 
             origin = os.getcwd()
             CacheHandler.lookupTableRWLock.acquire() # make sure no one is writing to a lookup table when changing directory
@@ -140,6 +151,9 @@ class CacheHandler:
                             cacheFile.write(rsp.getPacketRaw())
                         except AttributeError as e:
                             cacheFile.write(rsp)
+                        except OSError as e:
+                            print(e)
+                            print('CacheHandler:: cacheResponses(): fail to cache file')
                     # print('---------------------------------------------------------------')
                     # print('CacheHandler:: cacheResponse(): response: ' + cacheFileNameFH + ', ' + str(index) + ' is cached')
                     # print('---------------------------------------------------------------')
@@ -173,19 +187,23 @@ class CacheHandler:
                 # print('CacheHandler:: fetchResponses: released lock')
             except Exception as e: # unable to open, meaning no such table, thus no cache
                 CacheHandler.lookupTableRWLock.release()
-                return None, None
+                return (None, None)
             idx = CacheHandler.__entryExists(cacheFileNameFH, entries) # check cache entry
             if idx == -1: # no entry of such file exists
-                return None, None
+                return (None, None)
             print('-----------------------------------')
             print('CacheHandler:: cache response found')
             print('-----------------------------------')
             expiry = entries[idx]['expiry']
+            print('CacheHandler:: fetchResponses: expiry: ' + expiry)
             encodings = rqp.getHeaderInfo('accept-encoding')
             if encodings == 'nil':
-                encodings = '*'
-            encodingsSplitted = encodings.split(', ')
+                encodings = ['*']
+            encodingsSplitted = encodings.split(',')
+            for i in range(len(encodingsSplitted)):
+                encodingsSplitted[i] = encodingsSplitted[i].strip()
             for encoding in encodingsSplitted:
+                print('CacheHandler:: fetchResponses: in loop: ' + encoding)
                 if encoding == '*': # accept any encoding
                     for encoding in entries[idx]: # loop through key value pairs for the entry
                         if encoding == 'cacheFileNameFH' or encoding == 'expiry': # this is not an encoding key-value pair, continue
@@ -209,12 +227,13 @@ class CacheHandler:
                             print('----------------------------------------')
                             print('CacheHandler:: returning cache response:')
                             print('----------------------------------------')
-                            return rsps, expiry
+                            return (rsps, expiry)
                     # print('this line should not appear') # there should exist an entry for the fullPath, somethin's wrong
                     raise Exception('could not find entry that should be present')
 
                 if entries[idx][encoding] != 0: # encoding specified is not '*'
-                    numFiles = entries[idx][encoding]
+                    print('CacheHandler:: fetchResponses: found matching encoding: ' + encoding)
+                    numFiles = int(entries[idx][encoding])
                     rsps = []
                     for i in range(1, numFiles + 1):
                         try:
@@ -233,11 +252,11 @@ class CacheHandler:
                     print('----------------------------------------')
                     print('CacheHandler:: returning cache response:')
                     print('----------------------------------------')
-                    return rsps, expiry
-
+                    return (rsps, expiry)
+            return (None, None)
         else:
             pass # fetching from cache only applies to GET method
-            return None, None
+            return (None, None)
 
     @staticmethod
     def deleteFromCache(rqp): # get number of files cached, delete them all
@@ -258,7 +277,7 @@ class CacheHandler:
         idx = CacheHandler.__entryExists(cacheFileNameFH, entries)
         if idx != -1:
             for encoding in entries[idx]:
-                if encoding == 'cacheFileNameFH':
+                if encoding == 'cacheFileNameFH' or encoding == 'expiry':
                     continue
                 numFiles = entries[idx][encoding] # number of files stored for this encoded file
                 if numFiles == 0:

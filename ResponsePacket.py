@@ -164,7 +164,9 @@ class ResponsePacket:
 
     def isChunked(self):
         transferEncoding = self.getHeaderInfo('transfer-encoding').lower()
-        transferEncodingSplitted = transferEncoding.split(', ')
+        transferEncodingSplitted = transferEncoding.split(',')
+        for i in range(len(transferEncodingSplitted)):
+            transferEncodingSplitted[i] = transferEncodingSplitted[i].strip()
         if 'chunked' in transferEncodingSplitted:
             return True
         else:
@@ -183,17 +185,17 @@ class ResponsePacket:
             if option == '':
                 return line
             else:
-                lineSplitted = line.split(', ')
+                lineSplitted = line.split(',') #TODO
                 if option == 'timeout':
-                    if lineSplitted[0][0:len('timeout')].lower() == 'timeout':
-                        return lineSplitted[0][len('timeout') + 1 : ]
+                    if lineSplitted[0][0:len('timeout')].strip().lower() == 'timeout':
+                        return lineSplitted[0].strip()[len('timeout=') : ]
                     else:
-                        return lineSplitted[1][len('timeout') + 1 : ]
+                        return lineSplitted[1].strip()[len('timeout=') : ]
                 elif option == 'max':
-                    if lineSplitted[0][0:len('max')].lower() == 'max':
-                        return lineSplitted[0][len('max') + 1 : ]
+                    if lineSplitted[0][0:len('max')].strip().lower() == 'max':
+                        return lineSplitted[0].strip()[len('max=') : ]
                     else:
-                        return lineSplitted[1][len('max') + 1 : ]
+                        return lineSplitted[1].strip()[len('max=') : ]
                 else:
                     return 'nil'
 
