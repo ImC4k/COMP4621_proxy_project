@@ -83,16 +83,14 @@ class CacheHandler:
         if 'no-store' not in cacheOptionSplitted and 'private' not in cacheOptionSplitted: # specified as public or the header field is not present
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half
             encoding = rsps[0].getHeaderInfo('content-encoding')
+            expiry = 'nil' # default expiration is nil
             if '' in cacheFileNameSplitted:
                 print('CacheHandler:: cacheResponses: \'//\' detected, not supported')
                 print('-------------------------')
                 print('CacheHandler:: not cached')
                 print('-------------------------')
                 return
-            expiry = 'nil' # default expiration is nil
-            if 'must-revalidate' in cacheOptionSplitted or 'proxy-revalidate' in cacheOptionSplitted:
-                pass # don't do anything on expiry if must revalidate
-            else: # TODO
+            else:
                 for option in cacheOptionSplitted:
                     if option[0:len('max-age')].lower == 'max-age':
                         secondStr = option.split('=')[1]
@@ -111,6 +109,9 @@ class CacheHandler:
                             expiry = (TimeComparator(rsps[0].getHeaderInfo('date')) + secondStr).toString()
                         break
 
+                for option in cacheOptionSplitted: # don't do anything on expiry if must revalidate
+                    if option == 'must-revalidate' or option == 'proxy-revalidate' or option == 'no-cache':
+                        expiry = 'nil' # overwrite expiry back to 'nil'
 
             origin = os.getcwd()
             CacheHandler.lookupTableRWLock.acquire() # make sure no one is writing to a lookup table when changing directory

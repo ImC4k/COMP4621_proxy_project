@@ -39,7 +39,7 @@ class TimeComparator:
     @classmethod
     def currentTime(cls):
         currTime = datetime.datetime.utcnow()
-        obj = TimeComparator(dt=currTime)
+        obj = cls(dt=currTime)
         return obj
 
     def toString(self):
