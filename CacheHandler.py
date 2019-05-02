@@ -149,7 +149,7 @@ class CacheHandler:
             print('CacheHandler:: cacheResponse(): file(s) are cached')
             print('---------------------------------------------------------------')
             try:
-                CacheHandler.__updateLookup('ADD', cacheFileNameFH, encoding, index, expiry)
+                CacheHandler.__updateLookup('ADD', cacheFileNameFH, encoding, numFiles=index, expiry=expiry)
             except Exception as e:
                 raise e
         else:
@@ -173,13 +173,14 @@ class CacheHandler:
                 # print('CacheHandler:: fetchResponses: released lock')
             except Exception as e: # unable to open, meaning no such table, thus no cache
                 CacheHandler.lookupTableRWLock.release()
-                return None
+                return None, None
             idx = CacheHandler.__entryExists(cacheFileNameFH, entries) # check cache entry
             if idx == -1: # no entry of such file exists
-                return None
+                return None, None
             print('-----------------------------------')
             print('CacheHandler:: cache response found')
             print('-----------------------------------')
+            expiry = entries[idx]['expiry']
             encodings = rqp.getHeaderInfo('accept-encoding')
             if encodings == 'nil':
                 encodings = '*'
@@ -208,7 +209,7 @@ class CacheHandler:
                             print('----------------------------------------')
                             print('CacheHandler:: returning cache response:')
                             print('----------------------------------------')
-                            return rsps
+                            return rsps, expiry
                     # print('this line should not appear') # there should exist an entry for the fullPath, somethin's wrong
                     raise Exception('could not find entry that should be present')
 
@@ -232,11 +233,11 @@ class CacheHandler:
                     print('----------------------------------------')
                     print('CacheHandler:: returning cache response:')
                     print('----------------------------------------')
-                    return rsps
+                    return rsps, expiry
 
         else:
             pass # fetching from cache only applies to GET method
-            return None
+            return None, None
 
     @staticmethod
     def deleteFromCache(rqp): # get number of files cached, delete them all
@@ -262,7 +263,7 @@ class CacheHandler:
                 numFiles = entries[idx][encoding] # number of files stored for this encoded file
                 if numFiles == 0:
                     continue
-                for i in range(1, numFiles + 1):
+                for i in range(1, int(numFiles) + 1):
                     cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(i)
                     try:
                         os.remove(cacheFileName)
@@ -277,7 +278,7 @@ class CacheHandler:
             pass # nothing to delete
 
     @staticmethod
-    def __updateLookup(method, cacheFileNameFH, encoding='', numFiles='', expiry='nil'):
+    def __updateLookup(method, cacheFileNameFH, encoding='', numFiles=1, expiry='nil'):
         '''
         ADD: add record/ entry to lookup table
         DEL: delete record/ entry from lookup table, ignores encoding, numFiles
@@ -305,7 +306,8 @@ class CacheHandler:
                 newEntry = CacheHandler.__generateJSON(cacheFileNameFH) # create new entry
                 try:
                     newEntry.update({encoding : numFiles})
-                    newEntry.update({expiry : expiry})
+                    if expiry != 'nil':
+                        newEntry.update({expiry : expiry})
                 except Exception as e:
                     CacheHandler.lookupTableRWLock.release()
                     # print('CacheHandler:: __updateLookup: released lock')
@@ -314,6 +316,8 @@ class CacheHandler:
             else: # entry found
                 try:
                     entries[idx].update({encoding : numFiles})
+                    if expiry != 'nil':
+                        entries[idx].update({expiry : expiry})
                 except Exception as e:
                     CacheHandler.lookupTableRWLock.release()
                     # print('CacheHandler:: __updateLookup: released lock')

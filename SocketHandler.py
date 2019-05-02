@@ -94,9 +94,9 @@ class SocketHandler:
             try:
                 requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE) #, MSG_DONTWAIT
             except error as e:
-                if e == errno.EAGAIN:
+                if e == errno.EAGAIN: # no packet received, keep reaching out
                     continue
-                else:
+                else: # other exception
                     # raise e
                     print(e)
                     self.__socket.close()
@@ -125,7 +125,7 @@ class SocketHandler:
             else:
                 print('SocketHandler:: client access ok: ' + rqp.getHostName())
 
-            if rqp.getMethod().lower() == 'connect':
+            if rqp.getMethod().lower() == 'connect': # PATH HTTPS
                 print('SocketHandler:: CONNECT method detected, using HTTPS protocol')
                 print('--------------')
                 print('| PATH HTTPS |')
@@ -133,8 +133,8 @@ class SocketHandler:
                 self.establishHTTPSConnection(rqp)
                 return
             elif rqp.getMethod().lower() == 'get':
-                fetchedResponses = CacheHandler.fetchResponses(rqp)
-                if fetchedResponses is None: # no cache found
+                fetchedResponses, expiry = CacheHandler.fetchResponses(rqp)
+                if fetchedResponses is None: # no cache found PATH A
                     try:
                         rsps, serverSideSocket = self.requestToServer(rqp)
                     except ValueError as e:
@@ -145,7 +145,7 @@ class SocketHandler:
                         print('SocketHandler:: cannot receive response, forged a packet')
                         rsps.append(ResponsePacket.emptyPacket())
                     print('SocketHandler:: received response 1: \n' + rsps[0].getPacket('DEBUG') + '\nresponse packet end\n')
-                    if rsps[0].responseCode() == '200':
+                    if rsps[0].responseCode() == '200' or rsps[0].responseCode() == '206':
                         print('---------------------------------')
                         print('SocketHandler:: caching response:')
                         print('---------------------------------')
@@ -160,195 +160,47 @@ class SocketHandler:
                         print('----------')
                     self.__respondToClient(rsps, serverSideSocket)
 
-                else: # cache response found
-                    rqpTimeLine = rqp.getHeaderInfo('if-modified-since')
-                    if rqpTimeLine == 'nil':
-                        rqp.modifyTime(fetchedResponses[0].getHeaderInfo('date'))
-                        print('------------------------------------------')
-                        print('SocketHandler:: check if cache is updated:')
-                        print('------------------------------------------')
+                else: # TODO cache response found PATH B
+                    if rqp.getHeaderInfo('if-modified-since') != 'nil': # PATH BA
+                        print('-----------')
+                        print('| PATH BA |')
+                        print('-----------')
                         try:
-                            rsps, serverSideSocket = self.requestToServer(rqp)
-                        except ValueError as e:
-                            self.__socket.close()
-                            print('SocketHandler:: connection to client closed\n\n')
+                            rsps, serverSideSocket = self.__handleRequestSubroutine(rqp)
+                        except Exception as e:
+                            print('SocketHandler:: handleRequest: error encountered, ending connection')
                             break
-                        if rsps == []:
-                            print('SocketHandler:: cannot receive response, forged a packet')
-                            rsps.append(ResponsePacket.emptyPacket())
-                        if rsps[0].responseCode() == '200':
-                            print('----------------------------------------')
-                            print('SocketHandler:: new data found, caching:')
-                            print('----------------------------------------')
-                            ct = CacheThread('ADD', rqp, rsps)
-                            ct.start()
-                            print('------------')
-                            print('| PATH BAA |')
-                            print('------------')
-                            self.__respondToClient(rsps, serverSideSocket)
-
-                        elif rsps[0].responseCode() == '304':
-                            print('----------------------------')
-                            print('SocketHandler:: cache is OK:')
-                            print('----------------------------')
-                            if fetchedResponses[0].responseCode() != '206': # only the first element is a ResponsePacket object
-                                fetchedResponses[0].modifyTime(rsps[0].getHeaderInfo('date'))
-                            else:
-                                for fetchedResponse in fetchedResponses: # change time for all packets
-                                    fetchedResponse.modifyTime(rsps[0].getHeaderInfo('date'))
-                            ct = CacheThread(rqp, fetchedResponses, 'ADD')
-                            ct.start()
-                            print('------------')
-                            print('| PATH BAB |')
-                            print('------------')
-                            self.__respondToClient(fetchedResponses, serverSideSocket)
-
-                        elif rsps[0].responseCode() == '404':
-                            print('-------------------------------------------')
-                            print('SocketHandler:: no such file, delete cache:')
-                            print('-------------------------------------------')
-                            ct = CacheThread('DEL', rqp, rsps)
-                            ct.start()
-                            print('------------')
-                            print('| PATH BAC |')
-                            print('------------')
-                            self.__respondToClient(rsps, serverSideSocket)
-
-                        else:
-                            print('---------------------------------------------------------')
-                            print('SocketHandler:: packets are directly forwarded to client:')
-                            print('---------------------------------------------------------')
-                            print('------------')
-                            print('| PATH BAD |')
-                            print('------------')
-                            self.__respondToClient(rsps, serverSideSocket)
-
-                    else:
-                        rqpTime = TimeComparator(rqpTimeLine)
-                        fetchTime = TimeComparator(fetchedResponses[0].getHeaderInfo('date'))
-                        if rqpTime > fetchTime:
-                            print('---------------------------------------------------------')
-                            print('SocketHandler:: rqp > fetch, check if modified since rqp:')
-                            print('---------------------------------------------------------')
-                            try:
-                                rsps, serverSideSocket = self.requestToServer(rqp)
-                            except ValueError as e:
-                                self.__socket.close()
-                                print('SocketHandler:: connection to client closed\n\n')
-                                break
-                            if rsps == []:
-                                print('SocketHandler:: cannot receive response, forged a packet')
-                                rsps.append(ResponsePacket.emptyPacket())
-                            if rsps[0].responseCode() == '200':
-                                print('----------------------------------------')
-                                print('SocketHandler:: new data found, caching:')
-                                print('----------------------------------------')
-                                ct = CacheThread('ADD', rqp, rsps)
-                                ct.start()
-                                print('-------------')
-                                print('| PATH BBBA |')
-                                print('-------------')
-                                self.__respondToClient(rsps, serverSideSocket)
-
-                            elif rsps[0].responseCode() == '304':
-                                print('----------------------------------')
-                                print('SocketHandler:: update cache time:')
-                                print('----------------------------------')
-                                for fetchedResponse in fetchedResponses:
-                                    try:
-                                        fetchedResponse.modifyTime(rsps[0].getHeaderInfo('date'))
-                                    except AttributeError as e:
-                                        continue
-                                ct = CacheThread('ADD', rqp, rsps)
-                                ct.start()
-                                print('-------------')
-                                print('| PATH BBBB |')
-                                print('-------------')
-                                self.__respondToClient(fetchedResponses, serverSideSocket)
-
-                            elif rsps[0].responseCode() == '404':
-                                print('-------------------------------------------')
-                                print('SocketHandler:: no such file, delete cache:')
-                                print('-------------------------------------------')
-                                ct = CacheThread('DEL', rqp, rsps)
-                                ct.start()
-                                print('-------------')
-                                print('| PATH BBBC |')
-                                print('-------------')
-                                self.__respondToClient(rsps, serverSideSocket)
-
-                            else:
-                                print('-------------------------------------------------------')
-                                print('SocketHandler:: packet is directly forwarded to client:')
-                                print('-------------------------------------------------------')
-                                print('-------------')
-                                print('| PATH BBBD |')
-                                print('-------------')
-                                self.__respondToClient(rsps, serverSideSocket)
-
-                        else: # fetchTime > rqpTime
-                            rqp.modifyTime(fetchTime.toString())
-                            print('-----------------------------------------------------------')
-                            print('SocketHandler:: fetch > rqp, check if modified since fetch:')
-                            print('-----------------------------------------------------------')
-                            try:
-                                rsps, serverSideSocket = self.requestToServer(rqp)
-                            except ValueError as e:
-                                self.__socket.close()
-                                print('SocketHandler:: connection to client closed\n\n')
-                                break
-
-                            if rsps == []:
-                                print('SocketHandler:: cannot receive response, forged a packet')
-                                rsps.append(ResponsePacket.emptyPacket())
-                            if rsps[0].responseCode() == '200':
-                                print('----------------------------------------')
-                                print('SocketHandler:: new data found, caching:')
-                                print('----------------------------------------')
-                                ct = CacheThread('ADD', rqp, rsps)
-                                ct.start()
+                    else: # PATH BB
+                        if expiry != 'nil': # PATH BBA
+                            currentTime = TimeComparator.currentTime()
+                            expiryTime = TimeComparator(expiry)
+                            if expiryTime > currentTime: # packet cached has not expired yet PATH BBAA
                                 print('-------------')
                                 print('| PATH BBAA |')
                                 print('-------------')
-                                self.__respondToClient(rsps, serverSideSocket)
-
-                            elif rsps[0].responseCode() == '304':
-                                print('----------------------------------')
-                                print('SocketHandler:: update cache time:')
-                                print('----------------------------------')
-                                for fetchedResponse in fetchedResponses:
-                                    try:
-                                        fetchedResponse.modifyTime(rsps[0].getHeaderInfo('date'))
-                                    except AttributeError as e:
-                                        continue
-                                ct = CacheThread('ADD', rqp, rsps)
-                                ct.start()
+                                self.__respondToClient(fetchedResponses, serverSideSocket)
+                                rsps = fetchedResponses
+                            else: # packet cached expired, request new data from server
                                 print('-------------')
                                 print('| PATH BBAB |')
                                 print('-------------')
-                                self.__respondToClient(fetchedResponses, serverSideSocket)
+                                try:
+                                    rsps, serverSideSocket = self.__handleRequestSubroutine(rqp)
+                                except Exception as e:
+                                    print('SocketHandler:: handleRequest: error encountered, ending connection')
+                                    break
+                        else: # must revalidate PATH BBB
+                            fetchTimeStr = fetchedResponses[0].getHeaderInfo('date')
+                            if fetchTimeStr != 'nil': # if previous fetch time is present, create if-modified-since line
+                                fetchTime = TimeComparator(fetchTimeStr)
+                                rqp.modifyTime(fetchTime.toString())
+                            try:
+                                rsps, serverSideSocket = self.__handleRequestSubroutine(rqp, _304responses=fetchedResponses)
+                            except Exception as e:
+                                print('SocketHandler:: handleRequest: error encountered, ending connection')
+                                break
 
-                            elif rsps[0].responseCode() == '404':
-                                print('------------------------------------------------')
-                                print('SocketHandler:: no such file, delete from cache:')
-                                print('------------------------------------------------')
-                                ct = CacheThread('DEL', rqp, rsps)
-                                ct.start()
-                                print('-------------')
-                                print('| PATH BBAC |')
-                                print('-------------')
-                                self.__respondToClient(rsps, serverSideSocket)
-
-                            else:
-                                print('-------------------------------------------------------')
-                                print('SocketHandler:: packet is directly forwarded to client:')
-                                print('-------------------------------------------------------')
-                                print('-------------')
-                                print('| PATH BBAD |')
-                                print('-------------')
-                                self.__respondToClient(rsps, serverSideSocket)
-
-            else: # not GET nor CONNECT, request from server and reply to client, no caching required
+            else: # not GET nor CONNECT, request from server and reply to client, no caching required PATH C
                 try:
                     rsps, serverSideSocket = self.requestToServer(rqp)
                 except ValueError as e:
@@ -367,11 +219,11 @@ class SocketHandler:
             print('SocketHandler:: packet is forwarded to client:')
             print('----------------------------------------------')
             time = rsps[0].getKeepLive('timeout')
-            if time == 'nil': # default timeout 100s
+            if time == 'nil': # default timeout 20s
                 time = '20'
             self.__timeoutThreadID += 1
             timer = TimerThread(self.__timeoutThreadID, int(time), self, self.__threadRunning)
-            print('SocketHandler:: timeout set for ' + time + ' seconds')
+            print('SocketHandler:: set timeout:' + time + ' seconds')
             timer.start()
 
             if self.__isFirstResponse:
@@ -380,7 +232,7 @@ class SocketHandler:
                     self.__maxTransmission = 100
                 else:
                     self.__maxTransmission = int(maxTransmission)
-                print('SocketHandler:: max transmission: ' + str(self.__maxTransmission))
+                print('SocketHandler:: set max transmission: ' + str(self.__maxTransmission))
                 self.__isFirstResponse = False
 
             if rqp.getConnection().lower() == 'close': # close if close connection is detected
@@ -392,6 +244,7 @@ class SocketHandler:
 
             self.__maxTransmission -= 1
             print('SocketHandler:: transmission allowed remaining: ' + str(self.__maxTransmission))
+
         # loop end, close sockets
         self.__socket.close()
         print('SocketHandler:: connection to client closed\n\n')
@@ -399,6 +252,58 @@ class SocketHandler:
             serverSideSocket.close()
             print('SocketHandler:: connection to server closed\n\n')
         print('SocketHandler:: stopping')
+
+
+    def __handleRequestSubroutine(self, rqp, _304responses=''):
+        try:
+            rsps, serverSideSocket = self.requestToServer(rqp)
+        except Exception as e:
+            print('SocketHandler:: __handleRequestSubroutine: error encountered\n\n')
+            raise e
+
+        if rsps == []:
+            print('SocketHandler:: cannot receive response, forged a packet')
+            rsps.append(ResponsePacket.emptyPacket())
+        if rsps[0].responseCode() == '200':
+            print('----------------------------------------')
+            print('SocketHandler:: new data found, caching:')
+            print('----------------------------------------')
+            ct = CacheThread('ADD', rqp, rsps)
+            ct.start()
+            print('---------------------')
+            print('| PATH SUBROUTINE A |')
+            print('---------------------')
+            self.__respondToClient(rsps, serverSideSocket)
+
+        elif rsps[0].responseCode() == '304':
+            if _304responses != '':
+                rsps = _304responses
+            print('---------------------')
+            print('| PATH SUBROUTINE B |')
+            print('---------------------')
+            self.__respondToClient(rsps, serverSideSocket)
+
+        elif rsps[0].responseCode() == '404':
+            print('------------------------------------------------')
+            print('SocketHandler:: no such file, delete from cache:')
+            print('------------------------------------------------')
+            ct = CacheThread('DEL', rqp, rsps)
+            ct.start()
+            print('---------------------')
+            print('| PATH SUBROUTINE C |')
+            print('---------------------')
+            self.__respondToClient(rsps, serverSideSocket)
+
+        else:
+            print('-------------------------------------------------------')
+            print('SocketHandler:: packet is directly forwarded to client:')
+            print('-------------------------------------------------------')
+            print('---------------------')
+            print('| PATH SUBROUTINE D |')
+            print('---------------------')
+            self.__respondToClient(rsps, serverSideSocket)
+        return rsps, serverSideSocket
+
 
     def requestToServer(self, rqp, serverSideSocket = ''):
         rsps = [] # responses to be returned
@@ -411,7 +316,7 @@ class SocketHandler:
                 print('closing this connection')
                 self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
-                return []
+                return [], None
             if len(tempHost) == 2:
                 serverPort = int(tempHost[1])
             else:
@@ -422,11 +327,11 @@ class SocketHandler:
                 serverSideSocket.connect((serverAddr, serverPort))
             except TimeoutError as e:
                 print('SocketHandler:: requestToServer: server side socket timeout')
-                return []
+                return [], None
         serverSideSocket.send(rqp.getPacketRaw())
         responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE) # blocking, should receive data
         if responseRaw is None:
-            return []
+            return [], None
 
         rsp = ResponsePacket.parsePacket(responseRaw)
         rsps.append(rsp)
@@ -476,14 +381,16 @@ class SocketHandler:
             try:
                 self.__socket.send(rsp.getPacketRaw())
             except BrokenPipeError as e:
-                serverSideSocket.close()
-                print('SocketHandler:: connection to server closed\n\n')
+                if serverSideSocket is not None:
+                    serverSideSocket.close()
+                    print('SocketHandler:: connection to server closed\n\n')
             except AttributeError as e:
                 try:
                     self.__socket.send(rsp)
                 except BrokenPipeError as e:
-                    serverSideSocket.close()
-                    print('SocketHandler:: connection to server closed\n\n')
+                    if serverSideSocket is not None:
+                        serverSideSocket.close()
+                        print('SocketHandler:: connection to server closed\n\n')
                 except Exception as e:
                     print('SocketHandler:: __respondToClient: rsp is')
                     print(rsp)
@@ -571,7 +478,7 @@ class SocketHandler:
             self.__timeout = True
 
     def closeConnection(self):
-        self.__timerThreadRunning.clear()
+        self.__threadRunning.clear()
         self.__timeout = True
 
 
