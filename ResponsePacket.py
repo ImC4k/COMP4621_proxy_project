@@ -37,7 +37,7 @@ class ResponsePacket:
 
         responseCode():                         returns string response code
 
-        # isLastPacket():                         True if this is the last packet of the response
+        isLastPacket():                         True if this is the last packet of the response
 
         isChunked():                            True if this packet is part of a chunked response
 
@@ -69,7 +69,7 @@ class ResponsePacket:
         self.__headerSplitted = []
         self.__payload = ''
         self.__responseCode = ''
-        # self.__isLastPacket = ''
+        self.__isLastPacket = ''
         pass
 
     @classmethod
@@ -120,7 +120,7 @@ class ResponsePacket:
             packet += 'Date: ' + date + '\r\n'
         packet += '\r\n'
         packetRaw = packet.encode('ascii')
-        packetRaw += b'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>oops</title></head><body><h1>Oops</h1><h1>404 Not Found</h1></body></html>'
+        packetRaw += b'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>oops</title></head><body><h1>Oops</h1><h1>404 Not Found</h1></body></html>0\r\n\r\n'
         rp = ResponsePacket.parsePacket(packetRaw)
         return rp
 
@@ -151,16 +151,16 @@ class ResponsePacket:
             self.__responseCode = responseLineSplitted[1]
         return self.__responseCode
 
-    # def isLastPacket(self):
-    #     if self.__isLastPacket == '':
-    #         if self.isChunked():
-    #             if self.__payload[-len(b'\r\n\r\n'):] == b'\r\n\r\n':
-    #                 self.__isLastPacket = True
-    #             else:
-    #                 self.__isLastPacket = False
-    #         else:
-    #             self.__isLastPacket = True
-    #     return self.__isLastPacket
+    def isLastPacket(self):
+        if self.__isLastPacket == '':
+            if self.isChunked():
+                if self.__payload[-len(b'\r\n\r\n'):] == b'\r\n\r\n':
+                    self.__isLastPacket = True
+                else:
+                    self.__isLastPacket = False
+            else:
+                self.__isLastPacket = True
+        return self.__isLastPacket
 
     def isChunked(self):
         transferEncoding = self.getHeaderInfo('transfer-encoding').lower()

@@ -145,9 +145,15 @@ class SocketHandler:
                         self.__socket.close()
                         print('SocketHandler:: connection to client closed\n\n')
                         break
-                    if rsps == []:
-                        print('SocketHandler:: cannot receive response, forged a packet')
-                        rsps.append(ResponsePacket.emptyPacket(rqp))
+                    if rsps == []: # TODO
+                        self.__socket.close()
+                        print('SocketHandler:: connection to client closed\n\n')
+                        if serverSideSocket is not None:
+                            serverSideSocket.close()
+                            print('SocketHandler:: connection to server closed\n\n')
+                        # print('SocketHandler:: cannot receive response, forged a packet')
+                        # rsps.append(ResponsePacket.emptyPacket(rqp))
+                        # print('SocketHandler:: empty response: \n' + rsps[0].getPacket('DEBUG') + '\nresponse packet end\n')
                     else:
                         print('SocketHandler:: received response 1: \n' + rsps[0].getPacket('DEBUG') + '\nresponse packet end\n')
                     if rsps[0].responseCode() == '200' or rsps[0].responseCode() == '206':
@@ -345,7 +351,7 @@ class SocketHandler:
         else:
             expectedLength = int(expectedLength)
 
-        if (rsp.isChunked() or expectedLength != receivedLength) or rsp.responseCode() != '206': # handle continuous chunked data (1 header)
+        if (rsp.isChunked() or expectedLength != receivedLength) or rsp.responseCode() == '206': # handle continuous chunked data (1 header)
             sleepCount = 0
             while responseRaw[-len(b'0\r\n\r\n'):] != b'0\r\n\r\n':
                 try:
@@ -354,14 +360,14 @@ class SocketHandler:
                     sleep(1)
                     sleepCount += 1
                     print('SocketHandler:: requestToServer(): sleep count: ' + str(sleepCount))
-                    if sleepCount == 2:
+                    if sleepCount == 3:
                         print('SocketHandler:: requestToServer(): Timeout')
                         break
                     continue
                 if responseRaw  == b'': # same as not receiving anything, sleep and continue
                     sleep(1)
                     sleepCount += 1
-                    if sleepCount == 2:
+                    if sleepCount == 3:
                         print('SocketHandler:: requestToServer(): Timeout')
                         break
                     continue

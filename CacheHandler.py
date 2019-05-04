@@ -64,6 +64,7 @@ class CacheHandler:
         __getCacheFileNameFH(rqp):                      generate cache file name first half for the request
     '''
 
+    origin = '' # initialized by proxy_main
     cacheFileDirectory = 'cache_responses/'
     lookupTableRWLock = threading.Lock() # require sequential read/ write, otherwise may occur corruption/ data loss
 
@@ -127,26 +128,27 @@ class CacheHandler:
                         expiry = 'nil' # overwrite expiry back to 'nil'
                         break
 
-            origin = os.getcwd()
             CacheHandler.lookupTableRWLock.acquire() # make sure no one is writing to a lookup table when changing directory
+            if CacheHandler.origin is None:
+                CacheHandler.origin = os.getcwd()
             try: # ensure cache directory exists
-                os.chdir(origin + '/' + CacheHandler.cacheFileDirectory)
+                os.chdir(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
             except FileNotFoundError as e:
-                os.mkdir(origin + '/' + CacheHandler.cacheFileDirectory)
-                os.chdir(origin + '/' + CacheHandler.cacheFileDirectory)
+                os.mkdir(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
+                os.chdir(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
             for index in range(len(cacheFileNameSplitted) - 1): # ensure layers of directory exists
                 try:
                     os.chdir(cacheFileNameSplitted[index])
                 except FileNotFoundError as e:
                     os.mkdir(cacheFileNameSplitted[index])
                     os.chdir(cacheFileNameSplitted[index])
-            os.chdir(origin) # go back to project root
+            os.chdir(CacheHandler.origin) # go back to project root
             CacheHandler.lookupTableRWLock.release()
 
             index = 0
             for rsp in rsps: # cache each responses
                 index += 1
-                cacheFileName = origin + '/' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(index)
+                cacheFileName = CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(index)
                 # print('CacheHandler:: cacheResponse(): cacheFileName: ' + cacheFileName)
                 try:
                     with open(cacheFileName, 'wb') as cacheFile: # write as byte
@@ -308,7 +310,8 @@ class CacheHandler:
         # print('CacheHandler:: __updateLookup: entering function')
         CacheHandler.lookupTableRWLock.acquire()
         # print('CacheHandler:: __updateLookup: acquired lock')
-        origin = os.getcwd()
+        if CacheHandler.origin is None:
+            CacheHandler.origin = os.getcwd()
         try:
             with open('cache_lookup_table.json', 'r') as table:
                 entries = json.load(table)
@@ -366,7 +369,7 @@ class CacheHandler:
             CacheHandler.lookupTableRWLock.release()
             # print('CacheHandler:: __updateLookup: released lock')
             raise e
-        with open(origin + '/cache_lookup_table.json', 'w') as table: # write new lookup table
+        with open(CacheHandler.origin + '/cache_lookup_table.json', 'w') as table: # write new lookup table
             json.dump(entries, table, indent=4)
             # print('CacheHandler:: __updateLookup: new cache_lookup_table written')
         CacheHandler.lookupTableRWLock.release()
