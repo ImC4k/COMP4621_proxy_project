@@ -2,6 +2,7 @@ import json # for cache_lookup_table
 import os # remove file os.remove(filename)
 from RequestPacket import RequestPacket
 from ResponsePacket import ResponsePacket
+from TimeComparator import TimeComparator
 import threading
 
 
@@ -98,24 +99,26 @@ class CacheHandler:
                 return
             else:
                 for option in cacheOptionSplitted:
-                    if option[0:len('max-age')].lower == 'max-age':
+                    if option[0:len('max-age')].lower() == 'max-age':
                         secondStr = option.split('=')[1]
-                        if rsp[0].getHeaderInfo('date') == 'nil':
-                            expiry = (TimeComparator.currentTime() + secondStr).toString()
+                        responseDate = rsps[0].getHeaderInfo('date')
+                        if responseDate == 'nil': # date of retrieval not specified
+                            expiry = (TimeComparator.currentTime() + secondStr).toString() # use current time
                             print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                         else:
-                            expiry = (TimeComparator(rsps[0].getHeaderInfo('date')) + secondStr).toString()
+                            expiry = (TimeComparator(responseDate) + secondStr).toString()
                             print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                         break
 
                 for option in cacheOptionSplitted: # overwrite expiry from max-age with s-maxage
-                    if option[0:len('s-maxage')].lower == 's-maxage':
+                    if option[0:len('s-maxage')].lower() == 's-maxage':
                         secondStr = option.split('=')[1]
-                        if rsp[0].getHeaderInfo('date') == 'nil':
+                        responseDate = rsps[0].getHeaderInfo('date')
+                        if responseDate == 'nil':
                             expiry = (TimeComparator.currentTime() + secondStr).toString()
                             print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                         else:
-                            expiry = (TimeComparator(rsps[0].getHeaderInfo('date')) + secondStr).toString()
+                            expiry = (TimeComparator(responseDate) + secondStr).toString()
                             print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                         break
 
@@ -326,7 +329,7 @@ class CacheHandler:
                 try:
                     newEntry.update({encoding : numFiles})
                     if expiry != 'nil':
-                        newEntry.update({expiry : expiry})
+                        newEntry.update({'expiry' : expiry})
                 except Exception as e:
                     CacheHandler.lookupTableRWLock.release()
                     # print('CacheHandler:: __updateLookup: released lock')
@@ -336,7 +339,7 @@ class CacheHandler:
                 try:
                     entries[idx].update({encoding : numFiles})
                     if expiry != 'nil':
-                        entries[idx].update({expiry : expiry})
+                        entries[idx].update({'expiry' : expiry})
                 except Exception as e:
                     CacheHandler.lookupTableRWLock.release()
                     # print('CacheHandler:: __updateLookup: released lock')
