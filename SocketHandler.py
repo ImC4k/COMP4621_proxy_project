@@ -86,10 +86,11 @@ class SocketHandler:
         self.__isFirstResponse = True
         self.__threadRunning = threading.Event()
         self.__threadRunning.set()
+        self.serverSideSocket = None
+        self.serverAddr = None
         print('SocketHandler:: Socket handler initialized')
 
     def handleRequest(self):
-        serverSideSocket = None
         while not self.__timeout and self.__maxTransmission > 0:
             try:
                 requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE) #, MSG_DONTWAIT
@@ -101,8 +102,8 @@ class SocketHandler:
                     print(e)
                     self.__socket.close()
                     print('SocketHandler:: connection to client closed\n\n')
-                    if serverSideSocket is not None:
-                        serverSideSocket.close()
+                    if self.serverSideSocket is not None:
+                        self.serverSideSocket.close()
                         print('SocketHandler:: connection to server closed\n\n')
                     break
 
@@ -118,8 +119,8 @@ class SocketHandler:
                 self.__socket.send(ResponsePacket.emptyPacket(rqp).getPacketRaw())
                 self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
-                if serverSideSocket is not None:
-                    serverSideSocket.close()
+                if self.serverSideSocket is not None:
+                    self.serverSideSocket.close()
                     print('SocketHandler:: connection to server closed\n\n')
                 return
             else:
@@ -134,28 +135,24 @@ class SocketHandler:
                 return
             elif rqp.getMethod().lower() == 'get':
                 fetchedResponses, expiry = CacheHandler.fetchResponses(rqp)
-                # ret = CacheHandler.fetchResponses(rqp)
-                # print('SocketHandler:: handleRequest: ret: ' + str(ret))
-                # fetchedResponses = ret[0]
-                # expiry = ret[1]
+
                 if fetchedResponses is None: # no cache found PATH A
                     try:
-                        rsps, serverSideSocket = self.requestToServer(rqp)
+                        rsps = self.requestToServer(rqp)
                     except ValueError as e:
                         self.__socket.close()
                         print('SocketHandler:: connection to client closed\n\n')
                         break
-                    if rsps == []: # TODO
+
+                    if rsps == []: # TODO close connection if unable to retrive data
                         self.__socket.close()
                         print('SocketHandler:: connection to client closed\n\n')
-                        if serverSideSocket is not None:
-                            serverSideSocket.close()
+                        if self.serverSideSocket is not None:
+                            self.serverSideSocket.close()
                             print('SocketHandler:: connection to server closed\n\n')
-                        # print('SocketHandler:: cannot receive response, forged a packet')
-                        # rsps.append(ResponsePacket.emptyPacket(rqp))
-                        # print('SocketHandler:: empty response: \n' + rsps[0].getPacket('DEBUG') + '\nresponse packet end\n')
+                        return
                     else:
-                        print('SocketHandler:: received response 1: \n' + rsps[0].getPacket('DEBUG') + '\nresponse packet end\n')
+                        print('SocketHandler:: received response 1 of total ' + str(len(rsps)) + ': \n' + rsps[0].getPacket('DEBUG') + '\nresponse packet end\n')
                     if rsps[0].responseCode() == '200' or rsps[0].responseCode() == '206':
                         print('---------------------------------')
                         print('SocketHandler:: caching response:')
@@ -169,7 +166,8 @@ class SocketHandler:
                         print('----------')
                         print('| PATH A |')
                         print('----------')
-                    self.__respondToClient(rsps, serverSideSocket)
+
+                    self.__respondToClient(rsps)
 
                 else: # TODO cache response found PATH B
                     if rqp.getHeaderInfo('if-modified-since') != 'nil': # PATH BA
@@ -177,7 +175,7 @@ class SocketHandler:
                         print('| PATH BA |')
                         print('-----------')
                         try:
-                            rsps, serverSideSocket = self.__handleRequestSubroutine(rqp)
+                            rsps = self.__handleRequestSubroutine(rqp)
                         except Exception as e:
                             print('SocketHandler:: handleRequest: error encountered, ending connection')
                             break
@@ -189,14 +187,14 @@ class SocketHandler:
                                 print('-------------')
                                 print('| PATH BBAA |')
                                 print('-------------')
-                                self.__respondToClient(fetchedResponses, serverSideSocket)
+                                self.__respondToClient(fetchedResponses)
                                 rsps = fetchedResponses
                             else: # packet cached expired, request new data from server
                                 print('-------------')
                                 print('| PATH BBAB |')
                                 print('-------------')
                                 try:
-                                    rsps, serverSideSocket = self.__handleRequestSubroutine(rqp)
+                                    rsps = self.__handleRequestSubroutine(rqp)
                                 except Exception as e:
                                     print('SocketHandler:: handleRequest: error encountered, ending connection')
                                     break
@@ -206,14 +204,14 @@ class SocketHandler:
                                 fetchTime = TimeComparator(fetchTimeStr)
                                 rqp.modifyTime(fetchTime.toString())
                             try:
-                                rsps, serverSideSocket = self.__handleRequestSubroutine(rqp, _304responses=fetchedResponses)
+                                rsps = self.__handleRequestSubroutine(rqp, _304responses=fetchedResponses)
                             except Exception as e:
                                 print('SocketHandler:: handleRequest: error encountered, ending connection')
                                 break
 
             else: # not GET nor CONNECT, request from server and reply to client, no caching required PATH C
                 try:
-                    rsps, serverSideSocket = self.requestToServer(rqp)
+                    rsps = self.requestToServer(rqp)
                 except ValueError as e:
                     self.__socket.close()
                     print('SocketHandler:: connection to client closed\n\n')
@@ -224,7 +222,7 @@ class SocketHandler:
                     print('----------')
                     print('| PATH C |')
                     print('----------')
-                self.__respondToClient(rsps, serverSideSocket)
+                self.__respondToClient(rsps)
 
             print('----------------------------------------------')
             print('SocketHandler:: packet is forwarded to client:')
@@ -249,7 +247,8 @@ class SocketHandler:
             if rqp.getConnection().lower() == 'close': # close if close connection is detected
                 self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
-                serverSideSocket.close()
+                if self.serverSideSocket is not None:
+                    self.serverSideSocket.close()
                 print('SocketHandler:: connection to server closed\n\n')
                 break
 
@@ -259,15 +258,15 @@ class SocketHandler:
         # loop end, close sockets
         self.__socket.close()
         print('SocketHandler:: connection to client closed\n\n')
-        if serverSideSocket is not None:
-            serverSideSocket.close()
+        if self.serverSideSocket is not None:
+            self.serverSideSocket.close()
             print('SocketHandler:: connection to server closed\n\n')
         print('SocketHandler:: stopping')
 
 
     def __handleRequestSubroutine(self, rqp, _304responses=''):
         try:
-            rsps, serverSideSocket = self.requestToServer(rqp)
+            rsps = self.requestToServer(rqp)
         except Exception as e:
             print('SocketHandler:: __handleRequestSubroutine: error encountered\n\n')
             raise e
@@ -284,7 +283,7 @@ class SocketHandler:
             print('---------------------')
             print('| PATH SUBROUTINE A |')
             print('---------------------')
-            self.__respondToClient(rsps, serverSideSocket)
+            self.__respondToClient(rsps)
 
         elif rsps[0].responseCode() == '304':
             if _304responses != '':
@@ -292,7 +291,7 @@ class SocketHandler:
             print('---------------------')
             print('| PATH SUBROUTINE B |')
             print('---------------------')
-            self.__respondToClient(rsps, serverSideSocket)
+            self.__respondToClient(rsps)
 
         elif rsps[0].responseCode() == '404':
             print('------------------------------------------------')
@@ -303,7 +302,7 @@ class SocketHandler:
             print('---------------------')
             print('| PATH SUBROUTINE C |')
             print('---------------------')
-            self.__respondToClient(rsps, serverSideSocket)
+            self.__respondToClient(rsps)
 
         else:
             print('-------------------------------------------------------')
@@ -312,36 +311,47 @@ class SocketHandler:
             print('---------------------')
             print('| PATH SUBROUTINE D |')
             print('---------------------')
-            self.__respondToClient(rsps, serverSideSocket)
-        return rsps, serverSideSocket
+            self.__respondToClient(rsps)
+        return rsps
 
 
-    def requestToServer(self, rqp, serverSideSocket = ''):
+    def requestToServer(self, rqp):
         rsps = [] # responses to be returned
-        if serverSideSocket == '':
-            try:
-                tempHost = rqp.getHostName().split(':')
-                serverAddr = gethostbyname(tempHost[0])
-            except Exception as e:
-                print('SocketHandler:: requestToServer: failed to obtain ip for host server')
-                return [], None
-            if len(tempHost) == 2:
-                serverPort = int(tempHost[1])
-            else:
-                serverPort = SocketHandler.HTTP_PORT
 
-            serverSideSocket = socket(AF_INET, SOCK_STREAM)
+        try:
+            tempHost = rqp.getHostName().split(':')
+            tempServerAddr = gethostbyname(tempHost[0])
+        except Exception as e:
+            print('SocketHandler:: requestToServer: failed to obtain ip for host server')
+            return []
+        if len(tempHost) == 2:
+            serverPort = int(tempHost[1])
+        else:
+            serverPort = SocketHandler.HTTP_PORT
+
+        if self.serverAddr is not None and self.serverAddr != tempServerAddr: # incoming request server address doesn't match previous request
+            self.serverSideSocket.close()
+            self.serverSideSocket = None
+            print('SocketHandler:: connection to previous server closed\n\n')
+
+        if self.serverSideSocket is None:
+            self.serverSideSocket = socket(AF_INET, SOCK_STREAM)
             try:
-                serverSideSocket.connect((serverAddr, serverPort))
+                self.serverSideSocket.connect((tempServerAddr, serverPort))
+                self.serverAddr = tempServerAddr
             except TimeoutError as e:
                 print('SocketHandler:: requestToServer: server side socket timeout')
-                return [], None
-        serverSideSocket.send(rqp.getPacketRaw())
-        responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE) # blocking, should receive data
-        if responseRaw is None:
-            return [], None
+                return []
+            except Exception as e:
+                print('SocketHandler:: establish HTTP connection to server failed')
+                raise e
 
-        rsp = ResponsePacket.parsePacket(responseRaw)
+        self.serverSideSocket.send(rqp.getPacketRaw())
+        responseRaw = self.serverSideSocket.recv(SocketHandler.BUFFER_SIZE) # blocking, should receive data
+        if responseRaw is None:
+            return []
+
+        rsp = ResponsePacket.parsePacket(responseRaw) # Assumption first received packet should have a header
         rsps.append(rsp)
 
         expectedLength = rsp.getHeaderInfo('content-length')
@@ -355,7 +365,7 @@ class SocketHandler:
             sleepCount = 0
             while responseRaw[-len(b'0\r\n\r\n'):] != b'0\r\n\r\n':
                 try:
-                    responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
+                    responseRaw = self.serverSideSocket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
                 except Exception as e: # EAGAIN, no data received
                     sleep(1)
                     sleepCount += 1
@@ -382,22 +392,22 @@ class SocketHandler:
                     except TypeError as e:
                         rsps.append(responseRaw)
             print('SocketHandler:: requestToServer(): ended loop')
-        return rsps, serverSideSocket
+        return rsps
 
-    def __respondToClient(self, rsps, serverSideSocket):
+    def __respondToClient(self, rsps):
         for rsp in rsps:
             try:
                 self.__socket.send(rsp.getPacketRaw())
             except BrokenPipeError as e:
-                if serverSideSocket is not None:
-                    serverSideSocket.close()
+                if self.serverSideSocket is not None:
+                    self.serverSideSocket.close()
                     print('SocketHandler:: connection to server closed\n\n')
             except AttributeError as e:
                 try:
                     self.__socket.send(rsp)
                 except BrokenPipeError as e:
-                    if serverSideSocket is not None:
-                        serverSideSocket.close()
+                    if self.serverSideSocket is not None:
+                        self.serverSideSocket.close()
                         print('SocketHandler:: connection to server closed\n\n')
                 except Exception as e:
                     print('SocketHandler:: __respondToClient: rsp is')
@@ -411,7 +421,7 @@ class SocketHandler:
 
         try:
             tempHost = rqp.getHostName().split(':')
-            serverAddr = gethostbyname(tempHost[0])
+            tempServerAddr = gethostbyname(tempHost[0])
         except Exception as e:
             print('SocketHandler:: requestToServer: failed to obtain ip for host server')
             return
@@ -419,45 +429,67 @@ class SocketHandler:
             serverPort = int(tempHost[1])
         else:
             serverPort = SocketHandler.HTTPS_PORT
-        serverSideSocket = socket(AF_INET, SOCK_STREAM)
-        try:
-            serverSideSocket.connect((serverAddr, serverPort))
-        except Exception as e:
-            print('SocketHandler:: establish HTTPS connection to server failed')
-            raise e
+
+        if self.serverAddr is not None and self.serverAddr != tempServerAddr: # incoming request server address doesn't match previous request
+            self.serverSideSocket.close()
+            self.serverSideSocket = None
+            print('SocketHandler:: connection to previous server closed\n\n')
+
+        if self.serverSideSocket is None:
+            self.serverSideSocket = socket(AF_INET, SOCK_STREAM)
+            try:
+                self.serverSideSocket.connect((tempServerAddr, serverPort))
+                self.serverAddr = tempServerAddr
+            except TimeoutError as e:
+                print('SocketHandler:: requestToServer: server side socket timeout')
+                return
+            except Exception as e:
+                print('SocketHandler:: establish HTTPS connection to server failed')
+                raise e
+
         self.__socket.send(b'HTTP/1.1 200 Connection Established\r\n\r\n')
 
         while not self.__timeout:
             try:
                 requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
-                serverSideSocket.send(requestRaw)
+                self.serverSideSocket.send(requestRaw)
             except BlockingIOError as e:
                 pass
             except ConnectionResetError as e:
                 self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
-                serverSideSocket.close()
+                if self.serverSideSocket is not None:
+                    self.serverSideSocket.close()
                 print('SocketHandler:: connection to server closed\n\n')
                 return
             except BrokenPipeError as e:
                 self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
+                if self.serverSideSocket is not None:
+                    self.serverSideSocket.close()
+                print('SocketHandler:: connection to server closed\n\n')
+                return
             except Exception as e: #EAGAIN
                 raise e
 
             try:
-                responseRaw = serverSideSocket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
+                responseRaw = self.serverSideSocket.recv(SocketHandler.BUFFER_SIZE, MSG_DONTWAIT)
                 self.__socket.send(responseRaw)
             except BlockingIOError as e:
                 pass
             except ConnectionResetError as e:
                 self.__socket.close()
                 print('SocketHandler:: connection to client closed\n\n')
-                serverSideSocket.close()
+                if self.serverSideSocket is not None:
+                    self.serverSideSocket.close()
                 print('SocketHandler:: connection to server closed\n\n')
                 return
             except BrokenPipeError as e:
-                print('SocketHandler:: connection closed by client, broken pipe, closing connection')
+                self.__socket.close()
+                print('SocketHandler:: connection to client closed\n\n')
+                if self.serverSideSocket is not None:
+                    self.serverSideSocket.close()
+                print('SocketHandler:: connection to server closed\n\n')
                 return
             except Exception as e: #EAGAIN
                 raise e

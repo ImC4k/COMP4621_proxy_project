@@ -93,7 +93,10 @@ class ResponsePacket:
             rp.setPayload(payload)
         else: # contains chunked data
             headerRaw = packetRawSplitted[0]
-            payload = packetRaw[len(headerRaw):]
+            payload = b''
+            for i in range(1, len(packetRawSplitted) - 1):
+                payload += packetRawSplitted[i] + b'\r\n\r\n'
+            payload += packetRawSplitted[-1]
             rp.setPayload(payload)
         header = headerRaw.decode('ascii')
         headerSplitted = header.split('\r\n')
