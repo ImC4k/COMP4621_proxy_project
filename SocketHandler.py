@@ -332,6 +332,7 @@ class SocketHandler:
         if self.serverAddr is not None and self.serverAddr != tempServerAddr: # incoming request server address doesn't match previous request
             self.serverSideSocket.close()
             self.serverSideSocket = None
+            self.timeoutThreadID += 1
             print('SocketHandler:: connection to previous server closed\n\n')
 
         if self.serverSideSocket is None:
@@ -433,6 +434,7 @@ class SocketHandler:
         if self.serverAddr is not None and self.serverAddr != tempServerAddr: # incoming request server address doesn't match previous request
             self.serverSideSocket.close()
             self.serverSideSocket = None
+            self.timeoutThreadID += 1
             print('SocketHandler:: connection to previous server closed\n\n')
 
         if self.serverSideSocket is None:
