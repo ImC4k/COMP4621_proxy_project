@@ -49,9 +49,9 @@ class TimeComparator:
         return self.__time > other.__time
 
 
-    def __add__(self, secondStr): # tc += 'time in second'
+    def __add__(self, secondStr):
+        # tc += 'time in second'
         # format: Sat, 30 Mar 2019 12:30:18 GMT
-        # format: Wed, 01 May 2019 12:21:23 GMT
         time = self.__time + datetime.timedelta(seconds=int(secondStr))
         obj = TimeComparator(dt=time)
         return obj

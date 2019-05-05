@@ -144,7 +144,7 @@ class SocketHandler:
                         print('SocketHandler:: connection to client closed\n\n')
                         break
 
-                    if rsps == []: # TODO close connection if unable to retrive data
+                    if rsps == []:
                         self.__socket.close()
                         print('SocketHandler:: connection to client closed\n\n')
                         if self.serverSideSocket is not None:
@@ -169,7 +169,7 @@ class SocketHandler:
 
                     self.__respondToClient(rsps)
 
-                else: # TODO cache response found PATH B
+                else: # cache response found PATH B
                     if rqp.getHeaderInfo('if-modified-since') != 'nil': # PATH BA
                         print('-----------')
                         print('| PATH BA |')
@@ -578,7 +578,6 @@ class TimerThread(threading.Thread):
         self.__isRunning = isRunning
 
     def run(self):
-        # sleep(self.__time)
         sleepCount = 0
         while sleepCount != self.__time and self.__isRunning.is_set():
             sleep(1)

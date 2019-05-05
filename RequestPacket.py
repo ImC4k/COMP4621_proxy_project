@@ -63,7 +63,6 @@ class RequestPacket:
         this should not be called directly
         instead, should use p = RequestPacket.parsePacket(packet)
         '''
-        # print('enter default constructor')
         self.__requestLine = ''
         self.__filePath = ''
         self.__headerSplitted = []
@@ -74,11 +73,11 @@ class RequestPacket:
 
     @classmethod
     def parsePacket(cls, packetRaw):
-        # print('RequestPacket:: received packet:')
-        # print(packetRaw)
         print('\n\n')
         rp = RequestPacket()
+
         packetRawSplitted = packetRaw.split(b'\r\n\r\n')
+
         if len(packetRawSplitted) == 1:
             headerRaw = packetRawSplitted[0]
         elif len(packetRawSplitted) == 2:
@@ -86,10 +85,12 @@ class RequestPacket:
             rp.setPayload(payload)
         else:
             raise Exception('RequestPacket:: strange number of values unpacket: ' + str(len(packetRawSplitted)))
+
         header = headerRaw.decode('ascii')
         headerSplitted = header.split('\r\n')
         rp.setRequestLine(headerSplitted[0])
         rp.setHeaderSplitted(headerSplitted[1:])
+
         if rp.getMethod().lower() != 'connect': # file path needs to be fixed
             requestLineSplitted = headerSplitted[0].split(' ')
             requestLineSplitted[1] = rp.getFilePath()
@@ -140,7 +141,6 @@ class RequestPacket:
                 url = url[1:] # shift one character until '/detectportal.firefox.com/success.txt'
             url = url[1:] # shift one more time to 'detectportal.firefox.com/success.txt'
             filePath = url[len(self.getHostName()):]
-            # print('RequestPacket:: filePath requested is: ' + filePath) # '/success.txt'
             self.__filePath = filePath
             return filePath
         else:
@@ -156,22 +156,14 @@ class RequestPacket:
             self.__headerSplitted.append('if-modified-since: ' + time)
         else:
             self.__headerSplitted[index] = 'if-modified-since: ' + time
-        # self.setPacketRaw(self.getPacket().encode('ascii'))
 
     def getHostName(self):
-        # hostLineSplitted = self.__headerSplitted[1].split(' ') # assumed host must be the second line
         hostLine = ''
         for ss in self.__headerSplitted:
             if ss[0:len('Host')] == 'Host':
                 hostLine = ss
                 break
         hostLineSplitted = hostLine.split(' ')
-        # if self.getMethod() == 'CONNECT':
-        #     # print('\nRequestPacket:: host is ' + hostLineSplitted[1][:-len(':443')])
-        #     return hostLineSplitted[1][:-len(':443')]
-        # else:
-        #     # print('\nRequestPacket:: host is ' + hostLineSplitted[1])
-        #     return hostLineSplitted[1]
         return hostLineSplitted[1]
 
     def getMethod(self):
@@ -188,7 +180,6 @@ class RequestPacket:
                     connectionLine = ss
                     break
             connectionLineSplitted = connectionLine.split(' ')
-            # print('RequestPacket:: connectionLineSplitted: ' + str(connectionLineSplitted))
             self.__connection = connectionLineSplitted[1]
         return self.__connection
 

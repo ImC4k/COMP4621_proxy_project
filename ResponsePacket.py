@@ -79,9 +79,6 @@ class ResponsePacket:
         meaning there exists 1 header, multiple payload
         mission: reform into multiple packets, return the list of ResponsePacket objects
         '''
-        # print('ResponsePacket:: received packet:')
-        # print(packetRaw)
-        # print('\n\n')
         if packetRaw[0:len(b'HTTP')].lower() != b'http': # this raw data should be payload only, don't wrap as ResponsePacket, raise TypeError exception
             raise TypeError
         rp = ResponsePacket()
@@ -146,7 +143,6 @@ class ResponsePacket:
             self.__headerSplitted.append('date: ' + time)
         else:
             self.__headerSplitted[index] = 'date: ' + time
-        # self.setPacketRaw(self.getPacket().encode('ascii'))
 
     def responseCode(self):
         if self.__responseCode == '':
@@ -188,7 +184,7 @@ class ResponsePacket:
             if option == '':
                 return line
             else:
-                lineSplitted = line.split(',') #TODO
+                lineSplitted = line.split(',')
                 if option == 'timeout':
                     if lineSplitted[0][0:len('timeout')].strip().lower() == 'timeout':
                         return lineSplitted[0].strip()[len('timeout=') : ]
