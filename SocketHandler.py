@@ -122,6 +122,7 @@ class SocketHandler:
                 if self.serverSideSocket is not None:
                     self.serverSideSocket.close()
                     print('SocketHandler:: connection to server closed\n\n')
+                self.closeConnection()
                 return
             else:
                 print('SocketHandler:: client access ok: ' + rqp.getHostName())
@@ -132,6 +133,7 @@ class SocketHandler:
                 print('| PATH HTTPS |')
                 print('--------------')
                 self.establishHTTPSConnection(rqp)
+                self.closeConnection()
                 return
             elif rqp.getMethod().lower() == 'get':
                 fetchedResponses, expiry = CacheHandler.fetchResponses(rqp)
@@ -150,6 +152,7 @@ class SocketHandler:
                         if self.serverSideSocket is not None:
                             self.serverSideSocket.close()
                             print('SocketHandler:: connection to server closed\n\n')
+                        self.closeConnection()
                         return
                     else:
                         print('SocketHandler:: received response 1 of total ' + str(len(rsps)) + ': \n' + rsps[0].getPacket('DEBUG') + '\nresponse packet end\n')
@@ -332,7 +335,7 @@ class SocketHandler:
         if self.serverAddr is not None and self.serverAddr != tempServerAddr: # incoming request server address doesn't match previous request
             self.serverSideSocket.close()
             self.serverSideSocket = None
-            self.timeoutThreadID += 1
+            self.__timeoutThreadID += 1
             print('SocketHandler:: connection to previous server closed\n\n')
 
         if self.serverSideSocket is None:
@@ -362,7 +365,7 @@ class SocketHandler:
         else:
             expectedLength = int(expectedLength)
 
-        if (rsp.isChunked() or expectedLength != receivedLength) or rsp.responseCode() == '206': # handle continuous chunked data (1 header)
+        if (rsp.isChunked() or expectedLength != receivedLength) or rsp.responseCode() == '206': # TODO handle continuous chunked data (1 header)
             sleepCount = 0
             while responseRaw[-len(b'0\r\n\r\n'):] != b'0\r\n\r\n':
                 try:
@@ -434,7 +437,7 @@ class SocketHandler:
         if self.serverAddr is not None and self.serverAddr != tempServerAddr: # incoming request server address doesn't match previous request
             self.serverSideSocket.close()
             self.serverSideSocket = None
-            self.timeoutThreadID += 1
+            self.__timeoutThreadID += 1
             print('SocketHandler:: connection to previous server closed\n\n')
 
         if self.serverSideSocket is None:

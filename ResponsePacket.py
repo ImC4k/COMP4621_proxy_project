@@ -67,7 +67,7 @@ class ResponsePacket:
         '''
         self.__responseLine = ''
         self.__headerSplitted = []
-        self.__payload = ''
+        self.__payload = b''
         self.__responseCode = ''
         self.__isLastPacket = ''
         pass
