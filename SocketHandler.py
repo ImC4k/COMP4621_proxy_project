@@ -500,10 +500,14 @@ class SocketHandler:
                 raise e
 
     def onBlackList(self, rqp):
-        if SocketHandler.BANNED_SITES is None:
-            with open('banned_sites', 'r') as banned_sites_file:
-                SocketHandler.BANNED_SITES = banned_sites_file.read().split('\n')
-
+        if SocketHandler.BANNED_SITES is None: # create banned sites if no file found
+            try:
+                with open('banned_sites', 'r') as banned_sites_file:
+                    SocketHandler.BANNED_SITES = banned_sites_file.read().split('\n')
+            except FileNotFoundError as e:
+                with open('banned_sites', 'w') as banned_sites_file:
+                    banned_sites_file.write('***')
+                return False
         rq = rqp.getHostName().lower().split(':')[0]
         try:
             rqHost = gethostbyname(rq)
