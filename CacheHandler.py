@@ -66,7 +66,7 @@ class CacheHandler:
 
     origin = '' # initialized by proxy_main
     cacheFileDirectory = 'cache_responses/'
-    lookupTableRWLock = threading.Lock() # require sequential read/ write, otherwise may occur corruption/ data loss
+    lookupTableRWLock = threading.Semaphore() # require sequential read/ write, otherwise may occur corruption/ data loss
 
     @staticmethod
     def cacheResponses(rqp, rsps):
@@ -75,10 +75,6 @@ class CacheHandler:
         cache response whenever no-store, private are not specified in cache-control
         because all cached response will be revalidated by proxy anyway
         '''
-        try:
-            CacheHandler.deleteFromCache(rqp)
-        except FileNotFoundError as e:
-            pass
 
         cacheOption = rsps[0].getHeaderInfo('cache-control').lower()
         cacheOptionSplitted = cacheOption.split(',')
@@ -87,11 +83,22 @@ class CacheHandler:
         print('CacheHandler:: cacheResponses: cacheOptionSplitted: ' + str(cacheOptionSplitted))
         if 'no-store' not in cacheOptionSplitted and 'private' not in cacheOptionSplitted: # specified as public or the header field is not present
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half
+
             if len(cacheFileNameFH) > 255:
                 print('CacheHandler:: cacheResponses: file name too long, not caching')
                 return
+
+            idx = CacheHandler.__entryExists(cacheFileNameFH) # remove previous cache files
+            if idx != -1:
+                try:
+                    CacheHandler.deleteFromCache(rqp)
+                except Exception as e:
+                    raise e
+
             encoding = rsps[0].getHeaderInfo('content-encoding')
+
             expiry = 'nil' # default expiration is nil
+
             if '' in cacheFileNameSplitted:
                 print('CacheHandler:: cacheResponses: \'//\' detected, not supported')
                 print('-------------------------')
@@ -269,11 +276,11 @@ class CacheHandler:
 
         idx = CacheHandler.__entryExists(cacheFileNameFH, entries)
         if idx != -1:
-            for encoding in entries[idx]:
-                if encoding == 'cacheFileNameFH' or encoding == 'expiry':
+            for encoding in entries[idx]: # delete every encoding for the file name
+                if encoding == 'cacheFileNameFH' or encoding == 'expiry': # not encodings
                     continue
                 numFiles = entries[idx][encoding] # number of files stored for this encoded file
-                if numFiles == 0:
+                if numFiles == '0':
                     continue
                 for i in range(1, int(numFiles) + 1):
                     cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(i)
@@ -370,7 +377,7 @@ class CacheHandler:
         for idx in range(len(entries)):
             if entries[idx]['cacheFileNameFH'] == cacheFileNameFH:
                 return idx
-                
+
         return -1
 
     @staticmethod
