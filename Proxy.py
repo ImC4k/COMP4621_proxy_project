@@ -49,7 +49,7 @@ class Proxy:
     connectionThreads = []
 
     def __init__(self, port=6298):
-        self.proxyAddr = '127.0.0.1'
+        self.proxyAddr = '0.0.0.0' # support all IP
         self.proxyPort = port
         self.welcomeSocket = socket(AF_INET, SOCK_STREAM)
         self.welcomeSocket.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
