@@ -354,7 +354,7 @@ class SocketHandler:
         responseRaw = self.serverSideSocket.recv(SocketHandler.BUFFER_SIZE) # blocking, should receive data
         if responseRaw is None:
             return []
-
+        # TODO add exception loop append to responseRaw until a header can be formed
         rsp = ResponsePacket.parsePacket(responseRaw) # Assumption first received packet should have a header
         rsps.append(rsp)
 

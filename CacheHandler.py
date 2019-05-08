@@ -4,7 +4,7 @@ from RequestPacket import RequestPacket
 from ResponsePacket import ResponsePacket
 from TimeComparator import TimeComparator
 import threading
-
+from PrimeFinder import *
 
 
 #  ██  ██       ██████  █████   ██████ ██   ██ ███████     ██   ██  █████  ███    ██ ██████  ██      ███████ ██████
@@ -67,31 +67,47 @@ class CacheHandler:
     origin = '' # initialized by proxy_main
     cacheFileDirectory = 'cache_responses/'
     lookupTableRWLock = threading.Semaphore() # require sequential read/ write, otherwise may occur corruption/ data loss
+    chdirLock = threading.Semaphore()
+    hashedLocks = None
 
     @staticmethod
-    def cacheResponses(rqp, rsps):
+    def initHashedLocks(numThreads):
+        numSlots = PrimeFinder.findNextPrime(numThreads * 2)
+        CacheHandler.hashedLocks = []
+        for i in range(numSlots):
+            CacheHandler.hashedLocks.append(threading.Semaphore())
+
+    def __init__(self):
+        self.holdingLookupTableRWLock = False
+        self.holdingChdirLock = False
+        self.holdingHashedLock = -1
+        self.rqp = None
+        self.rsps = None
+        pass
+
+    def cacheResponses(self):
         '''
         assumed request method is GET
         cache response whenever no-store, private are not specified in cache-control
         because all cached response will be revalidated by proxy anyway
         '''
 
-        cacheOption = rsps[0].getHeaderInfo('cache-control').lower()
+        cacheOption = self.rsps[0].getHeaderInfo('cache-control').lower()
         cacheOptionSplitted = cacheOption.split(',')
         for i in range(len(cacheOptionSplitted)):
             cacheOptionSplitted[i] = cacheOptionSplitted[i].strip()
         print('CacheHandler:: cacheResponses: cacheOptionSplitted: ' + str(cacheOptionSplitted))
         if 'no-store' not in cacheOptionSplitted and 'private' not in cacheOptionSplitted: # specified as public or the header field is not present
-            cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half
+            cacheFileNameFH, cacheFileNameSplitted = self.__getCacheFileNameFH() # cache response file name first half
 
             if len(cacheFileNameFH) > 255:
                 print('CacheHandler:: cacheResponses: file name too long, not caching')
                 return
 
-            idx = CacheHandler.__entryExists(cacheFileNameFH) # remove previous cache files
-            if idx != -1:
+            idx = self.__entryExists(cacheFileNameFH) # remove previous cache files, acquire lookupTableRWLock
+            if idx != -1: # entry found, delete file
                 try:
-                    CacheHandler.deleteFromCache(rqp)
+                    self.deleteFromCache()
                 except Exception as e:
                     raise e
 
