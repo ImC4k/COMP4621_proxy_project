@@ -1,4 +1,5 @@
 from socket import *
+from CacheHandler import CacheHandler
 
 
 #  ██  ██      ██████  ██████   ██████  ██   ██ ██    ██
@@ -44,7 +45,7 @@ class Proxy:
 
     '''
 
-    MAX_CONNECTION = 500 # number of simultaneous connections supported
+    MAX_CONNECTION = 50 # number of simultaneous connections supported
     freeIndexArr = []
     connectionThreads = []
 
@@ -58,6 +59,7 @@ class Proxy:
         for i in range(Proxy.MAX_CONNECTION):
             Proxy.freeIndexArr.append(True)
             Proxy.connectionThreads.append([])
+        CacheHandler.initHashedLocks(Proxy.MAX_CONNECTION)
         print('Proxy:: server starts')
 
     def getFreeIndex(self):
