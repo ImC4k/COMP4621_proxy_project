@@ -4,7 +4,7 @@ from RequestPacket import RequestPacket
 from ResponsePacket import ResponsePacket
 from TimeComparator import TimeComparator
 import threading
-from PrimeFinder import *
+import PrimeFinder
 
 
 #  ██  ██       ██████  █████   ██████ ██   ██ ███████     ██   ██  █████  ███    ██ ██████  ██      ███████ ██████
@@ -27,7 +27,7 @@ class CacheHandler:
 
         cacheFileDirectory:             directory name of all cached responses to be stored into
 
-        lookupTableRWLock:              a lock for lookup table, must acquire it before reading/ writing
+        lookupTableLock:              a lock for lookup table, must acquire it before reading/ writing
 
     Constructor:
 
@@ -66,24 +66,41 @@ class CacheHandler:
 
     origin = '' # initialized by proxy_main
     cacheFileDirectory = 'cache_responses/'
-    lookupTableRWLock = threading.Semaphore() # require sequential read/ write, otherwise may occur corruption/ data loss
+    lookupTableLock = threading.Semaphore() # require sequential read/ write, otherwise may occur corruption/ data loss
     chdirLock = threading.Semaphore()
     hashedLocks = None
+    NUMSLOTS = 0
 
     @staticmethod
     def initHashedLocks(numThreads):
-        numSlots = PrimeFinder.findNextPrime(numThreads * 2)
+        '''
+        called by Proxy object
+        based on number of Threads, create sufficient amount of locks for cache file IO
+        '''
+        CacheHandler.NUMSLOTS = PrimeFinder.findNextPrime(numThreads * 2)
         CacheHandler.hashedLocks = []
-        for i in range(numSlots):
+        for i in range(CacheHandler.NUMSLOTS):
             CacheHandler.hashedLocks.append(threading.Semaphore())
 
+    @staticmethod
+    def writeLookupTableToFile():
+        '''
+
+        '''
+        CacheHandler.lookupTableLock.acquire()
+        if CacheHandler.lookupTable is not None:
+            with open(CacheHandler.origin + '/cache_lookup_table.json', 'w') as table: # write new lookup table
+                json.dump(CacheHandler.lookupTable, table, indent=4)
+        else:
+            print('CacheHandler:: writeLookupTableToFile: failed to write lookup table to file, lookup table is None')
+        CacheHandler.lookupTableLock.release()
+
     def __init__(self):
-        self.holdingLookupTableRWLock = False
+        self.holdingLookupTableLock = False
         self.holdingChdirLock = False
         self.holdingHashedLock = -1
         self.rqp = None
         self.rsps = None
-        pass
 
     def cacheResponses(self):
         '''
@@ -97,23 +114,9 @@ class CacheHandler:
         for i in range(len(cacheOptionSplitted)):
             cacheOptionSplitted[i] = cacheOptionSplitted[i].strip()
         print('CacheHandler:: cacheResponses: cacheOptionSplitted: ' + str(cacheOptionSplitted))
+
         if 'no-store' not in cacheOptionSplitted and 'private' not in cacheOptionSplitted: # specified as public or the header field is not present
             cacheFileNameFH, cacheFileNameSplitted = self.__getCacheFileNameFH() # cache response file name first half
-
-            if len(cacheFileNameFH) > 255:
-                print('CacheHandler:: cacheResponses: file name too long, not caching')
-                return
-
-            idx = self.__entryExists(cacheFileNameFH) # remove previous cache files, acquire lookupTableRWLock
-            if idx != -1: # entry found, delete file
-                try:
-                    self.deleteFromCache()
-                except Exception as e:
-                    raise e
-
-            encoding = rsps[0].getHeaderInfo('content-encoding')
-
-            expiry = 'nil' # default expiration is nil
 
             if '' in cacheFileNameSplitted:
                 print('CacheHandler:: cacheResponses: \'//\' detected, not supported')
@@ -121,55 +124,37 @@ class CacheHandler:
                 print('CacheHandler:: not cached')
                 print('-------------------------')
                 return
-            else:
-                for option in cacheOptionSplitted:
-                    if option[0:len('max-age')].lower() == 'max-age':
-                        secondStr = option.split('=')[1]
-                        responseDate = rsps[0].getHeaderInfo('date')
-                        if responseDate == 'nil': # date of retrieval not specified
-                            expiry = (TimeComparator.currentTime() + secondStr).toString() # use current time
-                            print('CacheHandler:: cacheResponses: expiry: ' + expiry)
-                        else:
-                            expiry = (TimeComparator(responseDate) + secondStr).toString()
-                            print('CacheHandler:: cacheResponses: expiry: ' + expiry)
-                        break
 
-                for option in cacheOptionSplitted: # overwrite expiry from max-age with s-maxage
-                    if option[0:len('s-maxage')].lower() == 's-maxage':
-                        secondStr = option.split('=')[1]
-                        responseDate = rsps[0].getHeaderInfo('date')
-                        if responseDate == 'nil':
-                            expiry = (TimeComparator.currentTime() + secondStr).toString()
-                            print('CacheHandler:: cacheResponses: expiry: ' + expiry)
-                        else:
-                            expiry = (TimeComparator(responseDate) + secondStr).toString()
-                            print('CacheHandler:: cacheResponses: expiry: ' + expiry)
-                        break
+            if len(cacheFileNameFH) > 255:
+                print('CacheHandler:: cacheResponses: file name too long, not caching')
+                print('-------------------------')
+                print('CacheHandler:: not cached')
+                print('-------------------------')
+                return
 
-                for option in cacheOptionSplitted: # don't do anything on expiry if must revalidate
-                    if option == 'must-revalidate' or option == 'proxy-revalidate' or option == 'no-cache':
-                        expiry = 'nil' # overwrite expiry back to 'nil'
-                        break
-
-            CacheHandler.lookupTableRWLock.acquire() # make sure no one is writing to a lookup table when changing directory
-            if CacheHandler.origin is None:
-                CacheHandler.origin = os.getcwd()
-            try: # ensure cache directory exists
-                os.chdir(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
-            except FileNotFoundError as e:
-                os.mkdir(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
-                os.chdir(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
-            for index in range(len(cacheFileNameSplitted) - 1): # ensure layers of directory exists
+            # starting from this point, the entry should be chacheable
+            CacheHandler.lookupTableLock.acquire() # put deleteFromCache in this critical section to make sure the file is not being manipulated
+            self.holdingLookupTableLock = True
+            idx = self.__entryExists(cacheFileNameFH) # remove previous cache files
+            if idx != -1: # entry found, delete file
                 try:
-                    os.chdir(cacheFileNameSplitted[index])
-                except FileNotFoundError as e:
-                    os.mkdir(cacheFileNameSplitted[index])
-                    os.chdir(cacheFileNameSplitted[index])
-            os.chdir(CacheHandler.origin) # go back to project root
-            CacheHandler.lookupTableRWLock.release()
+                    self.deleteFromCache()
+                except Exception as e:
+                    raise e
+            CacheHandler.lookupTableLock.release()
+            self.holdingLookupTableLock = False
+
+            encoding = self.rsps[0].getHeaderInfo('content-encoding')
+            expiry = self.__getExpiry()
+
+            self.__createDirectories(cacheFileNameSplitted)
+
+            fileHash = self.__getFileHash(cacheFileNameFH)
+            CacheHandler.hashedLocks[fileHash].acquire()
+            self.holdingHashedLock = fileHash
 
             index = 0
-            for rsp in rsps: # cache each responses
+            for rsp in self.rsps: # cache each responses
                 index += 1
                 cacheFileName = CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(index)
                 try:
@@ -182,15 +167,29 @@ class CacheHandler:
                             print(e)
                             print('CacheHandler:: cacheResponses(): fail to cache file')
                 except Exception as e:
+                    CacheHandler.lookupTableLock.release()
+                    self.holdingLookupTableLock = False
+
+                    CacheHandler.hashedLocks[fileHash].release()
+                    self.holdingHashedLock = -1
+
                     raise e
             print('---------------------------------------------------------------')
             print('CacheHandler:: cacheResponse(): file(s) are cached')
             print('---------------------------------------------------------------')
 
+            CacheHandler.lookupTableLock.acquire() # add file operation, make sure lookup table is not modified
+            self.holdingLookupTableLock = True
             try:
                 CacheHandler.__updateLookup('ADD', cacheFileNameFH, encoding, numFiles=index, expiry=expiry)
             except Exception as e:
+                CacheHandler.lookupTableLock.release()
+                self.holdingLookupTableLock = False
                 raise e
+
+            CacheHandler.hashedLocks[fileHash].release()
+            self.holdingHashedLock = -1
+
         else: # do not cache response
             print('-------------------------')
             print('CacheHandler:: not cached')
@@ -201,16 +200,7 @@ class CacheHandler:
         if rqp.getMethod().lower() == 'get':
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
 
-            try:
-                CacheHandler.lookupTableRWLock.acquire()
-                with open('cache_lookup_table.json', 'r') as table:
-                    entries = json.load(table)
-                CacheHandler.lookupTableRWLock.release()
-            except Exception as e: # unable to open, meaning no such table, thus no cache
-                CacheHandler.lookupTableRWLock.release()
-                return (None, None)
-
-            idx = CacheHandler.__entryExists(cacheFileNameFH, entries) # check cache entry
+            idx = self.__entryExists(cacheFileNameFH, entries) # check cache entry
             if idx == -1: # no entry of such file exists
                 return (None, None)
 
@@ -281,12 +271,12 @@ class CacheHandler:
         cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
 
         try:
-            CacheHandler.lookupTableRWLock.acquire()
+            CacheHandler.lookupTableLock.acquire()
             with open('cache_lookup_table.json', 'r') as table:
                 entries = json.load(table)
-            CacheHandler.lookupTableRWLock.release()
+            CacheHandler.lookupTableLock.release()
         except Exception as e: # unable to open, meaning no such table, thus no cache
-            CacheHandler.lookupTableRWLock.release()
+            CacheHandler.lookupTableLock.release()
             print('CacheHandler:: deleteFromCache: attempted to delete non-existing file')
             raise e
 
@@ -318,7 +308,7 @@ class CacheHandler:
         ADD: add record/ entry to lookup table
         DEL: delete record/ entry from lookup table, ignores encoding, numFiles
         '''
-        CacheHandler.lookupTableRWLock.acquire()
+        CacheHandler.lookupTableLock.acquire()
 
         if CacheHandler.origin is None:
             CacheHandler.origin = os.getcwd()
@@ -331,7 +321,7 @@ class CacheHandler:
             entries = [] # create new entry list
             idx = -1 # no previous entry found
         except Exception as e:
-            CacheHandler.lookupTableRWLock.release()
+            CacheHandler.lookupTableLock.release()
             raise e
 
         if method == 'ADD':
@@ -342,7 +332,7 @@ class CacheHandler:
                     if expiry != 'nil':
                         newEntry.update({'expiry' : expiry})
                 except Exception as e:
-                    CacheHandler.lookupTableRWLock.release()
+                    CacheHandler.lookupTableLock.release()
                     raise e
                 entries.append(newEntry)
             else: # entry found
@@ -351,17 +341,17 @@ class CacheHandler:
                     if expiry != 'nil':
                         entries[idx].update({'expiry' : expiry})
                 except Exception as e:
-                    CacheHandler.lookupTableRWLock.release()
+                    CacheHandler.lookupTableLock.release()
                     raise e
 
         elif method == 'DEL':
             if idx == -1: # something wrong
-                CacheHandler.lookupTableRWLock.release()
+                CacheHandler.lookupTableLock.release()
                 raise Exception('CacheHandler:: __updateLookup(): attempted to delete non-existing entry')
             else:
                 del entries[idx] # delete entire entry
         else:
-            CacheHandler.lookupTableRWLock.release()
+            CacheHandler.lookupTableLock.release()
             raise Exception('CacheHandler:: __updateLookup(): invalid method: ' + method)
 
         # replace lookup table
@@ -370,24 +360,24 @@ class CacheHandler:
         except FileNotFoundError as e: # originally no such file
             pass # no deletion if not found
         except Exception as e: # raise exception for other exceptions
-            CacheHandler.lookupTableRWLock.release()
+            CacheHandler.lookupTableLock.release()
             raise e
 
         with open(CacheHandler.origin + '/cache_lookup_table.json', 'w') as table: # write new lookup table
             json.dump(entries, table, indent=4)
 
-        CacheHandler.lookupTableRWLock.release()
+        CacheHandler.lookupTableLock.release()
 
     @staticmethod
     def __entryExists(cacheFileNameFH, entries=[]):
         if entries == []:
             try:
-                CacheHandler.lookupTableRWLock.acquire()
+                CacheHandler.lookupTableLock.acquire()
                 with open('cache_lookup_table.json', 'r') as table:
                     entries = json.load(table)
-                CacheHandler.lookupTableRWLock.release()
+                CacheHandler.lookupTableLock.release()
             except FileNotFoundError as e: # unable to open, meaning no such table, thus no cache
-                CacheHandler.lookupTableRWLock.release()
+                CacheHandler.lookupTableLock.release()
                 return -1
 
         for idx in range(len(entries)):
@@ -422,8 +412,85 @@ class CacheHandler:
             cacheFileNameFH += subpart + '/'
         return cacheFileNameFH[:-1], cacheFileNameSplitted
 
+    def __getExpiry(self):
+        expiry = 'nil' # default expiration is nil
 
+        for option in cacheOptionSplitted:
+            if option[0:len('max-age')].lower() == 'max-age':
+                secondStr = option.split('=')[1]
+                responseDate = self.rsps[0].getHeaderInfo('date')
+                if responseDate == 'nil': # date of retrieval not specified
+                    expiry = (TimeComparator.currentTime() + secondStr).toString() # use current time
+                    print('CacheHandler:: cacheResponses: expiry: ' + expiry)
+                else:
+                    expiry = (TimeComparator(responseDate) + secondStr).toString()
+                    print('CacheHandler:: cacheResponses: expiry: ' + expiry)
+                break
 
+        for option in cacheOptionSplitted: # overwrite expiry from max-age with s-maxage
+            if option[0:len('s-maxage')].lower() == 's-maxage':
+                secondStr = option.split('=')[1]
+                responseDate = self.rsps[0].getHeaderInfo('date')
+                if responseDate == 'nil':
+                    expiry = (TimeComparator.currentTime() + secondStr).toString()
+                    print('CacheHandler:: cacheResponses: expiry: ' + expiry)
+                else:
+                    expiry = (TimeComparator(responseDate) + secondStr).toString()
+                    print('CacheHandler:: cacheResponses: expiry: ' + expiry)
+                break
+
+        for option in cacheOptionSplitted: # don't do anything on expiry if must revalidate
+            if option == 'must-revalidate' or option == 'proxy-revalidate' or option == 'no-cache':
+                expiry = 'nil' # overwrite expiry back to 'nil'
+                break
+
+        return expiry
+
+    def __createDirectories(self, cacheFileNameSplitted):
+        if CacheHandler.origin is None: # unlikely
+            CacheHandler.origin = os.getcwd()
+
+        completeDirectory = CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory + ''.join(cacheFileNameSplitted[:-1])
+        if not os.path.exists(completeDirectory):
+            CacheHandler.chdirLock.acquire()
+            self.holdingChdirLock = True
+            try: # ensure cache directory exists
+                os.chdir(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
+            except FileNotFoundError as e:
+                os.mkdir(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
+                os.chdir(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
+            for idx in range(len(cacheFileNameSplitted) - 1): # ensure layers of directory exists
+                try:
+                    os.chdir(cacheFileNameSplitted[idx])
+                except FileNotFoundError as e:
+                    os.mkdir(cacheFileNameSplitted[idx])
+                    os.chdir(cacheFileNameSplitted[idx])
+            os.chdir(CacheHandler.origin) # go back to project root
+            CacheHandler.chdirLock.release()
+            self.holdingChdirLock = False
+
+    def __getFileHash(self, cacheFileNameFH):
+        return abs(hash(cacheFileNameFH))%CacheHandler.NUMSLOTS
+
+    def __getLookupTable(self):
+        releaseLookupTableLock = False
+        if not self.holdingLookupTableLock:
+            CacheHandler.lookupTableLock.acquire()
+            self.holdingLookupTableLock = True
+            releaseLookupTableLock = True
+
+        if CacheHandler.lookupTable is None:
+            try:
+                with open('cache_lookup_table.json', 'w') as table:
+                    CacheHandler.lookupTable = json.load(table)
+            except FileNotFoundError as e:
+                CacheHandler.lookupTable = []
+
+        if releaseLookupTableLock:
+            CacheHandler.lookupTableLock.release()
+            self.holdingLookupTableLock = False
+
+        return CacheHandler.lookupTable
 
 
 

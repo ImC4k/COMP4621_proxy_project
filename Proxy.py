@@ -99,6 +99,7 @@ class Proxy:
                 for i in range(Proxy.MAX_CONNECTION): # wait for all child processes
                     if not Proxy.freeIndexArr[i]:
                         Proxy.connectionThreads[i].join()
+                CacheHandler.writeLookupTableToFile()
                 print('Proxy:: closing proxy') # after joining all processes, quit function`
                 break
 
