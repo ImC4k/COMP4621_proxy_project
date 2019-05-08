@@ -85,7 +85,7 @@ class CacheHandler:
     @staticmethod
     def writeLookupTableToFile():
         '''
-
+        when proxy program quits, write the lookup table back to cache_lookup_table.json
         '''
         CacheHandler.lookupTableLock.acquire()
         if CacheHandler.lookupTable is not None:
@@ -118,18 +118,7 @@ class CacheHandler:
         if 'no-store' not in cacheOptionSplitted and 'private' not in cacheOptionSplitted: # specified as public or the header field is not present
             cacheFileNameFH, cacheFileNameSplitted = self.__getCacheFileNameFH() # cache response file name first half
 
-            if '' in cacheFileNameSplitted:
-                print('CacheHandler:: cacheResponses: \'//\' detected, not supported')
-                print('-------------------------')
-                print('CacheHandler:: not cached')
-                print('-------------------------')
-                return
-
-            if len(cacheFileNameFH) > 255:
-                print('CacheHandler:: cacheResponses: file name too long, not caching')
-                print('-------------------------')
-                print('CacheHandler:: not cached')
-                print('-------------------------')
+            if '' in cacheFileNameSplitted or len(cacheFileNameFH) > 255:
                 return
 
             # starting from this point, the entry should be chacheable
