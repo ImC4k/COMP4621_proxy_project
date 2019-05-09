@@ -66,6 +66,7 @@ class CacheHandler:
 
     origin = '' # initialized by proxy_main
     cacheFileDirectory = 'cache_responses/'
+    lookupTable = None
     lookupTableLock = threading.Semaphore() # require sequential read/ write, otherwise may occur corruption/ data loss
     chdirLock = threading.Semaphore()
     hashedLocks = None
@@ -83,24 +84,31 @@ class CacheHandler:
             CacheHandler.hashedLocks.append(threading.Semaphore())
 
     @staticmethod
+    def exitRoutine():
+        pass
+
+    @staticmethod
     def writeLookupTableToFile():
         '''
         when proxy program quits, write the lookup table back to cache_lookup_table.json
         '''
+        if CacheHandler.origin == '':
+            CacheHandler.origin = os.getcwd()
+
         CacheHandler.lookupTableLock.acquire()
-        if CacheHandler.lookupTable is not None:
+        if CacheHandler.lookupTable is not None: # directly access instead of calling __getLookupTable
             with open(CacheHandler.origin + '/cache_lookup_table.json', 'w') as table: # write new lookup table
                 json.dump(CacheHandler.lookupTable, table, indent=4)
         else:
             print('CacheHandler:: writeLookupTableToFile: failed to write lookup table to file, lookup table is None')
         CacheHandler.lookupTableLock.release()
 
-    def __init__(self):
+    def __init__(self, rqp=None, rsps=None):
         self.holdingLookupTableLock = False
         self.holdingChdirLock = False
         self.holdingHashedLock = -1
-        self.rqp = None
-        self.rsps = None
+        self.rqp = rqp
+        self.rsps = rsps
 
     def cacheResponses(self):
         '''
@@ -124,10 +132,10 @@ class CacheHandler:
             # starting from this point, the entry should be chacheable
             CacheHandler.lookupTableLock.acquire() # put deleteFromCache in this critical section to make sure the file is not being manipulated
             self.holdingLookupTableLock = True
-            idx = self.__entryExists(cacheFileNameFH) # remove previous cache files
+            idx = self.__entryExists(cacheFileNameFH, releaseLookupTableLock=False) # remove previous cache files
             if idx != -1: # entry found, delete file
                 try:
-                    self.deleteFromCache()
+                    self.deleteFromCache(releaseLookupTableLock=False)
                 except Exception as e:
                     raise e
             CacheHandler.lookupTableLock.release()
@@ -184,20 +192,29 @@ class CacheHandler:
             print('CacheHandler:: not cached')
             print('-------------------------')
 
-    @staticmethod
-    def fetchResponses(rqp): # fetch all related responses, return list of response packets (not raw)
+    def fetchResponses(self, rqp): # fetch all related responses, return list of response packets (not raw)
         if rqp.getMethod().lower() == 'get':
             cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
 
-            idx = self.__entryExists(cacheFileNameFH, entries) # check cache entry
+            CacheHandler.lookupTableLock.acquire()
+            self.holdingLookupTableLock = True
+
+            idx = self.__entryExists(cacheFileNameFH, releaseLookupTableLock=False) # get index of entry, -1 if none; no need to lock entire function since the index will not change until Proxy closes
             if idx == -1: # no entry of such file exists
+                CacheHandler.lookupTableLock.release()
+                self.holdingLookupTableLock = False
                 return (None, None)
+
+            entry = self.__getLookupTable()[idx]
+
+            CacheHandler.lookupTableLock.release()
+            self.holdingLookupTableLock = False
 
             print('-----------------------------------')
             print('CacheHandler:: cache response found')
             print('-----------------------------------')
 
-            expiry = entries[idx]['expiry']
+            expiry = entry['expiry']
             print('CacheHandler:: fetchResponses: expiry: ' + expiry)
 
             encodings = rqp.getHeaderInfo('accept-encoding')
@@ -210,12 +227,17 @@ class CacheHandler:
             for encoding in encodingsSplitted:
                 print('CacheHandler:: fetchResponses: in loop: ' + encoding)
                 if encoding == '*': # accept any encoding
-                    for encoding in entries[idx]: # loop through key value pairs for the entry
+                    for encoding in entry: # loop through key value pairs for the entry
                         if encoding == 'cacheFileNameFH' or encoding == 'expiry': # this is not an encoding key-value pair, continue
                             continue
-                        if entries[idx][encoding] != 0: # any one encoding that cached file is not 0, including 'nil'
-                            numFiles = entries[idx][encoding]
+                        if entry[encoding] != 0: # any one encoding that cached file is not 0, including 'nil'
+                            numFiles = entry[encoding]
                             rsps = [] # list of response packets
+
+                            fileHash = self.__getFileHash(cacheFileNameFH)
+                            CacheHandler.hashedLocks[fileHash].acquire()
+                            self.holdingHashedLock = fileHash
+
                             for i in range(1, numFiles + 1):
                                 try:
                                     with open(CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(i), 'rb') as responseFile:
@@ -225,17 +247,28 @@ class CacheHandler:
                                     except TypeError as e:
                                         rsps.append(responseRaw)
                                 except Exception as e:
+                                    CacheHandler.hashedLocks[fileHash].release()
+                                    self.holdingHashedLock = -1
                                     raise e
+
+                            CacheHandler.hashedLocks[fileHash].release()
+                            self.holdingHashedLock = -1
+
                             print('----------------------------------------')
                             print('CacheHandler:: returning cache response:')
                             print('----------------------------------------')
                             return (rsps, expiry)
                     raise Exception('could not find entry that should be present')
 
-                if entries[idx][encoding] != 0: # encoding specified is not '*'
+                if entry[encoding] != 0: # encoding specified is not '*'
                     print('CacheHandler:: fetchResponses: found matching encoding: ' + encoding)
-                    numFiles = int(entries[idx][encoding])
+                    numFiles = int(entry[encoding])
                     rsps = []
+
+                    fileHash = self.__getFileHash(cacheFileNameFH)
+                    CacheHandler.hashedLocks[fileHash].acquire()
+                    self.holdingHashedLock = fileHash
+
                     for i in range(1, numFiles + 1):
                         try:
                             with open(CacheHandler.cacheFileDirectory + cacheFileNameFH+ ', ' + encoding + ', ' + str(i), 'rb') as responseFile:
@@ -245,8 +278,12 @@ class CacheHandler:
                             except TypeError as e:
                                 rsps.append(responseRaw)
                         except Exception as e:
+                            CacheHandler.hashedLocks[fileHash].release()
+                            self.holdingHashedLock = -1
                             raise Exception('could not find entry that should be present')
 
+                    CacheHandler.hashedLocks[fileHash].release()
+                    self.holdingHashedLock = -1
                     print('----------------------------------------')
                     print('CacheHandler:: returning cache response:')
                     print('----------------------------------------')
@@ -255,119 +292,138 @@ class CacheHandler:
         else: # fetching from cache only applies to GET method
             return (None, None)
 
-    @staticmethod
-    def deleteFromCache(rqp): # get number of files cached, delete them all
+    def deleteFromCache(self, releaseLookupTableLock=True): # get number of files cached, delete them all
         cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
 
-        try:
+        if not self.holdingLookupTableLock:
             CacheHandler.lookupTableLock.acquire()
-            with open('cache_lookup_table.json', 'r') as table:
-                entries = json.load(table)
+            self.holdingLookupTableLock = True
+            releaseLookupTableLock = True
+
+        idx = CacheHandler.__entryExists(cacheFileNameFH, releaseLookupTableLock=False)
+        if idx == -1:
+            if releaseLookupTableLock:
+                CacheHandler.lookupTableLock.release()
+                self.holdingLookupTableLock = False
+            return
+        entry = self.__getLookupTable()[idx]
+
+        if releaseLookupTableLock:
             CacheHandler.lookupTableLock.release()
-        except Exception as e: # unable to open, meaning no such table, thus no cache
-            CacheHandler.lookupTableLock.release()
-            print('CacheHandler:: deleteFromCache: attempted to delete non-existing file')
+            self.holdingLookupTableLock = False
+
+        for encoding in entry: # delete every encoding for the file name
+            if encoding == 'cacheFileNameFH' or encoding == 'expiry': # not encodings
+                continue
+            numFiles = entry[encoding] # number of files stored for this encoded file
+            if numFiles == '0':
+                continue
+
+            fileHash = self.__getFileHash(cacheFileNameFH)
+            CacheHandler.hashedLocks[fileHash].acquire()
+            self.holdingHashedLock = filehash
+
+            for i in range(1, int(numFiles) + 1):
+                cacheFileName = CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(i)
+                try:
+                    os.remove(cacheFileName)
+                except Exception as e:
+                    print('CacheHandler:: deleteFromCache: FH: ' + cacheFileNameFH)
+                    CacheHandler.hashedLocks[fileHash].release()
+                    self.holdingHashedLock = -1
+                    raise Exception('CacheHandler:: deleteFromCache: lookup table and data mismatch -> Corruption detected')
+
+            CacheHandler.hashedLocks[fileHash].release()
+            self.holdingHashedLock = -1
+        try:
+            if not self.holdingLookupTableLock:
+                CacheHandler.lookupTableLock.acquire()
+                self.holdingLookupTableLock = True
+
+            CacheHandler.__updateLookup('DEL', cacheFileNameFH) # delete entire entry, because all encodings are deleted
+
+            if releaseLookupTableLock:
+                CacheHandler.lookupTableLock.release()
+                self.holdingLookupTableLock = False
+        except Exception as e:
             raise e
 
-        idx = CacheHandler.__entryExists(cacheFileNameFH, entries)
-        if idx != -1:
-            for encoding in entries[idx]: # delete every encoding for the file name
-                if encoding == 'cacheFileNameFH' or encoding == 'expiry': # not encodings
-                    continue
-                numFiles = entries[idx][encoding] # number of files stored for this encoded file
-                if numFiles == '0':
-                    continue
-                for i in range(1, int(numFiles) + 1):
-                    cacheFileName = CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(i)
-                    try:
-                        os.remove(cacheFileName)
-                    except Exception as e:
-                        print('CacheHandler:: deleteFromCache: FH: ' + cacheFileNameFH)
-                        raise Exception('CacheHandler:: deleteFromCache: lookup table and data mismatch -> Corruption detected')
-            try:
-                CacheHandler.__updateLookup('DEL', cacheFileNameFH) # delete entire entry, because all encodings are deleted
-            except Exception as e:
-                raise e
-        else:
-            pass # nothing to delete
-
     @staticmethod
-    def __updateLookup(method, cacheFileNameFH, encoding='', numFiles=1, expiry='nil'):
+    def __updateLookup(method, cacheFileNameFH, encoding='', numFiles=1, expiry='nil', releaseLookupTableLock=True):
         '''
         ADD: add record/ entry to lookup table
         DEL: delete record/ entry from lookup table, ignores encoding, numFiles
         '''
-        CacheHandler.lookupTableLock.acquire()
+        if not self.holdingLookupTableLock:
+            CacheHandler.lookupTableLock.acquire()
+            self.holdingLookupTableLock = True
+            releaseLookupTableLock = True
 
-        if CacheHandler.origin is None:
+        if CacheHandler.origin is None: # unlikely
             CacheHandler.origin = os.getcwd()
 
-        try:
-            with open('cache_lookup_table.json', 'r') as table:
-                entries = json.load(table)
-            idx = CacheHandler.__entryExists(cacheFileNameFH, entries)
-        except FileNotFoundError as e: # first write to lookup table
-            entries = [] # create new entry list
-            idx = -1 # no previous entry found
-        except Exception as e:
-            CacheHandler.lookupTableLock.release()
-            raise e
+        idx = CacheHandler.__entryExists(cacheFileNameFH, releaseLookupTableLock=False)
+
 
         if method == 'ADD':
             if idx == -1: # no existing entry found
-                newEntry = CacheHandler.__generateJSON(cacheFileNameFH) # create new entry
+                newEntry = self.__generateJSON(cacheFileNameFH) # create new entry
                 try:
                     newEntry.update({encoding : numFiles})
                     if expiry != 'nil':
                         newEntry.update({'expiry' : expiry})
                 except Exception as e:
-                    CacheHandler.lookupTableLock.release()
+                    if releaseLookupTableLock:
+                        CacheHandler.lookupTableLock.release()
+                        releaseLookupTableLock = False
                     raise e
-                entries.append(newEntry)
+                CacheHandler.__getLookupTable().append(newEntry)
             else: # entry found
                 try:
-                    entries[idx].update({encoding : numFiles})
+                    entry = CacheHandler.__getLookupTable()[idx]
+                    entry.update({encoding : numFiles})
                     if expiry != 'nil':
-                        entries[idx].update({'expiry' : expiry})
+                        entry[idx].update({'expiry' : expiry})
+                    CacheHandler.lookupTable[idx] = entry
                 except Exception as e:
-                    CacheHandler.lookupTableLock.release()
+                    if releaseLookupTableLock:
+                        CacheHandler.lookupTableLock.release()
+                        releaseLookupTableLock = False
                     raise e
 
         elif method == 'DEL':
             if idx == -1: # something wrong
-                CacheHandler.lookupTableLock.release()
+                if releaseLookupTableLock:
+                    CacheHandler.lookupTableLock.release()
+                    releaseLookupTableLock = False
                 raise Exception('CacheHandler:: __updateLookup(): attempted to delete non-existing entry')
             else:
-                del entries[idx] # delete entire entry
+                entry = self.__getLookupTable()[idx]
+                for encoding in entry:
+                    if encoding == 'cacheFileNameFH' or encoding == 'expiry': # this is not an encoding key-value pair, continue
+                        continue
+                    entry.update({encoding : 0})
+                CacheHandler.lookupTable[idx] = entry
         else:
-            CacheHandler.lookupTableLock.release()
+            if releaseLookupTableLock:
+                CacheHandler.lookupTableLock.release()
+                releaseLookupTableLock = False
             raise Exception('CacheHandler:: __updateLookup(): invalid method: ' + method)
 
-        # replace lookup table
-        try:
-            os.remove('cache_lookup_table.json') # delete if exists
-        except FileNotFoundError as e: # originally no such file
-            pass # no deletion if not found
-        except Exception as e: # raise exception for other exceptions
+        if releaseLookupTableLock:
             CacheHandler.lookupTableLock.release()
-            raise e
+            releaseLookupTableLock = False
 
-        with open(CacheHandler.origin + '/cache_lookup_table.json', 'w') as table: # write new lookup table
-            json.dump(entries, table, indent=4)
+    def __entryExists(self, cacheFileNameFH, releaseLookupTableLock=True):
+        if not self.holdingLookupTableLock:
+            CacheHandler.lookupTableLock.acquire()
+            self.holdingLookupTableLock = True
 
-        CacheHandler.lookupTableLock.release()
+        entries = CacheHandler.__getLookupTable()
 
-    @staticmethod
-    def __entryExists(cacheFileNameFH, entries=[]):
-        if entries == []:
-            try:
-                CacheHandler.lookupTableLock.acquire()
-                with open('cache_lookup_table.json', 'r') as table:
-                    entries = json.load(table)
-                CacheHandler.lookupTableLock.release()
-            except FileNotFoundError as e: # unable to open, meaning no such table, thus no cache
-                CacheHandler.lookupTableLock.release()
-                return -1
+        if releaseLookupTableLock:
+            CacheHandler.lookupTableLock.release()
+            self.holdingLookupTableLock = False
 
         for idx in range(len(entries)):
             if entries[idx]['cacheFileNameFH'] == cacheFileNameFH:
@@ -375,8 +431,7 @@ class CacheHandler:
 
         return -1
 
-    @staticmethod
-    def __generateJSON(cacheFileNameFH):
+    def __generateJSON(self, cacheFileNameFH):
         object = {
             "cacheFileNameFH" : cacheFileNameFH,
             "expiry" : "nil",
@@ -389,8 +444,7 @@ class CacheHandler:
         }
         return object
 
-    @staticmethod
-    def __getCacheFileNameFH(rqp):
+    def __getCacheFileNameFH(self, rqp):
         cacheFileNameSplitted = [rqp.getHostName()]
         if rqp.getFilePath() != '/':
             filePathSplitted = rqp.getFilePath()[1:].split('/')
@@ -436,6 +490,10 @@ class CacheHandler:
         return expiry
 
     def __createDirectories(self, cacheFileNameSplitted):
+        '''
+        called by cacheResponses
+        creates necessary directories to store necessary files
+        '''
         if CacheHandler.origin is None: # unlikely
             CacheHandler.origin = os.getcwd()
 
@@ -461,8 +519,7 @@ class CacheHandler:
     def __getFileHash(self, cacheFileNameFH):
         return abs(hash(cacheFileNameFH))%CacheHandler.NUMSLOTS
 
-    def __getLookupTable(self):
-        releaseLookupTableLock = False
+    def __getLookupTable(self, releaseLookupTableLock=True):
         if not self.holdingLookupTableLock:
             CacheHandler.lookupTableLock.acquire()
             self.holdingLookupTableLock = True
