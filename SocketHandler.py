@@ -354,7 +354,7 @@ class SocketHandler:
         responseRaw = self.serverSideSocket.recv(SocketHandler.BUFFER_SIZE) # blocking, should receive data
         if responseRaw is None:
             return []
-        # TODO add exception loop append to responseRaw until a header can be formed
+        
         rsp = ResponsePacket.parsePacket(responseRaw) # Assumption first received packet should have a header
         rsps.append(rsp)
 
@@ -365,7 +365,7 @@ class SocketHandler:
         else:
             expectedLength = int(expectedLength)
 
-        if (rsp.isChunked() or expectedLength != receivedLength) or rsp.responseCode() == '206': # TODO handle continuous chunked data (1 header)
+        if (rsp.isChunked() or expectedLength != receivedLength) or rsp.responseCode() == '206':
             sleepCount = 0
             while responseRaw[-len(b'0\r\n\r\n'):] != b'0\r\n\r\n':
                 try:
