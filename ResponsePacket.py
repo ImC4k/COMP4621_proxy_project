@@ -3,78 +3,29 @@ from RequestPacket import RequestPacket
 class ResponsePacket:
     '''
     process response packet
-
-    Members:
-
-        __responseLine:                         first line of response
-
-        __headerSplitted:                       entire lines of response header, delimited by '\r\n'
-
-        __payload:                              raw payload
-
-        __responseCode:                         response code of packet
-
-        __isLastPacket:                         specify if this packet is the last packet of the request
-
-    Constructors:
-
-        default:                                does nothing
-
-        parsePacket(packetRaw):                 param: (packetRaw : bytes)
-                                                takes entire raw packet, auto separation and initialize members
-
-        emptyPacket(rqp):                       creates 404 Not Found packet
-
-    Functions:
-
-        setHeaderSplitted(headerSplitted):      set splitted packet data
-
-        setResponseLine(responseLine)           set response line
-
-        setPayload(payload):                    set payload data
-
-        modifyTime(time):                       change the date field to ${time}
-
-        responseCode():                         returns string response code
-
-        isLastPacket():                         True if this is the last packet of the response
-
-        isChunked():                            True if this packet is part of a chunked response
-
-        getKeepLive(option=''):                 returns keep-alive field value
-                                                option: timeout or max
-                                                returns corresponding value
-                                                return 'nil' if keep-alive is not present in packet
-
-        getHeaderInfo(fieldName):               param: (fieldName : string)
-                                                (update) returns value of fieldName
-
-        getPacket(option=''):                   returns string packet, option'DEBUG' to omit printing payload
-
-        getPacketRaw():                         returns raw (encoded) packet data
-
-        getResponseLine():                      returns string response line
-
-        getHeaderSplitted():                    returns list of string header fields
-
-        getPayload():                           returns raw payload (no header)
     '''
 
     def __init__(self):
         '''
-        this should not be called directly
-        instead, should use p = ResponsePacket.parsePacket(packet)
+        __responseLine:     first line of response
+
+        __headerSplitted:   entire lines of response header, delimited by '\r\n'
+
+        __payload:          raw payload
+
+        __responseCode:     response code of packet
         '''
         self.__responseLine = ''
         self.__headerSplitted = []
         self.__payload = b''
         self.__responseCode = ''
-        self.__isLastPacket = ''
         pass
 
     @classmethod
     def parsePacket(cls, packetRaw):
         '''
+        takes entire raw packet, auto separation and initialize members
+
         note: packetRaw can contain chunked data,
         meaning there exists 1 header, multiple payload
         mission: reform into multiple packets, return the list of ResponsePacket objects
@@ -104,6 +55,8 @@ class ResponsePacket:
     @classmethod
     def emptyPacket(cls, rqp):
         '''
+        creates 404 Not Found packet
+
         format:
         HTTP/1.1 404 Not Found
         Date: Wed, 17 Apr 2019 13:31:51 GMT
@@ -134,6 +87,9 @@ class ResponsePacket:
         self.__payload = payload
 
     def modifyTime(self, time):
+        '''
+        change the date field to ${time}
+        '''
         index = -1 # line index where header field key is 'date'
         for idx in range(len(self.__headerSplitted)):
             if self.__headerSplitted[idx][0:len('date')].lower() == 'date':
@@ -150,17 +106,6 @@ class ResponsePacket:
             self.__responseCode = responseLineSplitted[1]
         return self.__responseCode
 
-    def isLastPacket(self):
-        if self.__isLastPacket == '':
-            if self.isChunked():
-                if self.__payload[-len(b'\r\n\r\n'):] == b'\r\n\r\n':
-                    self.__isLastPacket = True
-                else:
-                    self.__isLastPacket = False
-            else:
-                self.__isLastPacket = True
-        return self.__isLastPacket
-
     def isChunked(self):
         transferEncoding = self.getHeaderInfo('transfer-encoding').lower()
         transferEncodingSplitted = transferEncoding.split(',')
@@ -172,6 +117,12 @@ class ResponsePacket:
             return False
 
     def getKeepLive(self, option=''):
+        '''
+        returns keep-alive field value
+        option: timeout or max
+        returns corresponding value
+        return 'nil' if keep-alive is not present in packet
+        '''
         line = ''
         for ss in self.__headerSplitted:
             if ss[0:len('keep-alive')].lower() == 'keep-alive':
@@ -199,6 +150,9 @@ class ResponsePacket:
                     return 'nil'
 
     def getHeaderInfo(self, fieldName):
+        '''
+        returns value of fieldName
+        '''
         line = ''
         for ss in self.__headerSplitted:
             if ss[0:len(fieldName)].lower() == fieldName:
