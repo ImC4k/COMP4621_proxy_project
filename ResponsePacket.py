@@ -120,7 +120,7 @@ class ResponsePacket:
             packet += 'Date: ' + date + '\r\n'
         packet += '\r\n'
         packetRaw = packet.encode('ascii')
-        packetRaw += b'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>oops</title></head><body><h1>Oops</h1><h1>404 Not Found</h1></body></html>0\r\n\r\n'
+        packetRaw += b'<!DOCTYPE html><html><head><meta charset="UTF-8"><title>oops</title></head><body><h1>Oops</h1><h1>404 Not Found</h1></body></html>'
         rp = ResponsePacket.parsePacket(packetRaw)
         return rp
 
