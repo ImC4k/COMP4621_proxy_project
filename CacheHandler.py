@@ -22,46 +22,6 @@ class CacheHandler:
 
     records responses to local files,
     returns a cached response
-
-    Members:
-
-        cacheFileDirectory:             directory name of all cached responses to be stored into
-
-        lookupTableLock:              a lock for lookup table, must acquire it before reading/ writing
-
-    Constructor:
-
-    Functions:
-
-        cacheResponses(rqp, rsps):                      param: (rqp: RequestPacket, rsps : list of ResponsePacket)
-                                                        handle cache request
-                                                        determine if the responses should be cached/ updated in cache file
-                                                        if no, then simply return
-                                                        if yes,
-                                                            write the responses to cached_responses/ directory,
-                                                            with title: `${FH}, ${encoding}, ${order}`,
-                                                            with raw response as payload
-                                                            update lookup file correspondingly
-
-        fetchResponse(rqp):                             param: (rqp : RequestPacket)
-                                                        handle fetch request
-                                                        returns list of response packets fetched
-                                                        if nothing fetched, return None
-
-        deleteFromCache(rqp, rsp):                      delete all cache responses matching file url
-                                                        update lookup file correspondingly
-
-        __updateLookup(method, FH, encoding):           param: (method: {'ADD', 'DEL'}, FH : string, encoding : string)
-                                                        ADD: add entry to lookup table
-                                                        DEL: delete entry from lookup table
-
-        __entryExists(FH, entries):                     check if response ${FH} exists in entries
-                                                        returns index in array if true,
-                                                        returns -1 otherwise
-
-        __generateJSON(FH):                             generate template for ${FH} object
-
-        __getCacheFileNameFH(rqp):                      generate cache file name first half for the request
     '''
 
     origin = '' # initialized by proxy_main
@@ -169,6 +129,33 @@ class CacheHandler:
         CacheHandler.lookupTableLock.release()
 
     def __init__(self, rqp, rsps=None):
+        '''
+        origin:                     @static
+                                    project root directory
+
+        cacheFileDirectory:         @static
+                                    cache responses storage directory
+
+        lookupTable:                @static
+
+        lookupTableLock:            @static
+
+        chdirLock:                  @static
+
+        hashedLocks:                @static
+
+        NUMSLOTS:                   @static
+
+        holdingLookupTableLock:
+
+        holdingChdirLock:
+
+        holdingHashedLock:
+
+        rqp:                        request packet
+
+        rsps:                       response packets
+        '''
         self.holdingLookupTableLock = False
         self.holdingChdirLock = False
         self.holdingHashedLock = -1
@@ -177,6 +164,15 @@ class CacheHandler:
 
     def cacheResponses(self):
         '''
+        handle cache request
+        determine if the responses should be cached/ updated in cache file
+        if no, then simply return
+        if yes,
+            write the responses to cached_responses/ directory,
+            with title: `${FH}, ${encoding}, ${order}`,
+            with raw response as payload
+            update lookup file correspondingly
+
         assumed request method is GET
         cache response whenever no-store, private are not specified in cache-control
         because all cached response will be revalidated by proxy anyway
@@ -264,6 +260,11 @@ class CacheHandler:
             print('-------------------------')
 
     def fetchResponses(self): # fetch all related responses, return list of response packets (not raw)
+        '''
+        handle fetch request
+        returns list of response packets fetched and expiration time
+        if nothing fetched, return (None, None)
+        '''
         if self.rqp.getMethod().lower() == 'get':
             cacheFileNameFH, cacheFileNameSplitted = self.__getCacheFileNameFH() # cache response file name first half, splitted is useless here
 
@@ -364,6 +365,10 @@ class CacheHandler:
             return (None, None)
 
     def deleteFromCache(self, releaseLookupTableLock=True): # get number of files cached, delete them all
+        '''
+        delete all cache responses matching file url
+        update lookup file correspondingly
+        '''
         cacheFileNameFH, cacheFileNameSplitted = self.__getCacheFileNameFH() # cache response file name first half, splitted is useless here
 
         if not self.holdingLookupTableLock:
@@ -421,6 +426,7 @@ class CacheHandler:
 
     def __updateLookup(self, method, cacheFileNameFH, encoding='', numFiles=1, expiry='nil', releaseLookupTableLock=True):
         '''
+        update lookup table according to method
         ADD: add record/ entry to lookup table
         DEL: delete record/ entry from lookup table, ignores encoding, numFiles
         '''
@@ -485,6 +491,11 @@ class CacheHandler:
             releaseLookupTableLock = False
 
     def __entryExists(self, cacheFileNameFH, releaseLookupTableLock=True):
+        '''
+        check if an entry with name: cacheFileNameFH exists
+        if yes then return the index of entry
+        else return -1
+        '''
         if not self.holdingLookupTableLock:
             CacheHandler.lookupTableLock.acquire()
             self.holdingLookupTableLock = True
@@ -502,6 +513,9 @@ class CacheHandler:
         return -1
 
     def __generateJSON(self, cacheFileNameFH):
+        '''
+        generate template for entry with name: cacheFileNameFH
+        '''
         object = {
             "cacheFileNameFH" : cacheFileNameFH,
             "expiry" : "nil",
@@ -515,6 +529,9 @@ class CacheHandler:
         return object
 
     def __getCacheFileNameFH(self):
+        '''
+        from rqp, generate entry name
+        '''
         cacheFileNameSplitted = [self.rqp.getHostName()]
         if self.rqp.getFilePath() != '/':
             filePathSplitted = self.rqp.getFilePath()[1:].split('/')
@@ -526,6 +543,10 @@ class CacheHandler:
         return cacheFileNameFH[:-1], cacheFileNameSplitted
 
     def __getExpiry(self, cacheOptionSplitted):
+        '''
+        get the expiration time from cacheOptionSplitted
+        calculated from current time
+        '''
         expiry = 'nil' # default expiration is nil
 
         for option in cacheOptionSplitted:
@@ -587,9 +608,20 @@ class CacheHandler:
             self.holdingChdirLock = False
 
     def __getFileHash(self, cacheFileNameFH):
+        '''
+        hash function for obtaining a lock before writing/ deleting a cache file
+        '''
         return abs(hash(cacheFileNameFH))%CacheHandler.NUMSLOTS
 
     def __getLookupTable(self, releaseLookupTableLock=True):
+        '''
+        returns lookupTable
+
+        if CacheHandler.lookupTable is None,
+            open file and fetch, put to variable
+
+            if file not found/ has error, reset as empty list
+        '''
         if not self.holdingLookupTableLock:
             CacheHandler.lookupTableLock.acquire()
             self.holdingLookupTableLock = True
@@ -625,31 +657,25 @@ from CacheHandler import CacheHandler
 class CacheThread(threading.Thread):
     '''
     thread to cache the response
+    '''
 
-    Members:
-
+    def __init__(self, option, rqp, rsps):
+        '''
         __option:               'ADD' / 'DEL'
 
         __rqp:                  request packet
 
         __rsps:                 response packets
-
-    Constructor:
-
-        default:                set rqp, rsps
-
-    Functions:
-
-        run:                    'ADD': call CacheHandler.cacheResponse(rqp, rsp)
-                                'DEL': call CacheHandler.deleteFromCache(rqp)
-    '''
-
-    def __init__(self, option, rqp, rsps):
+        '''
         threading.Thread.__init__(self)
         self.__option = option
         self.cacher = CacheHandler(rqp, rsps)
 
     def run(self):
+        '''
+        'ADD': call CacheHandler.cacheResponse(rqp, rsp)
+        'DEL': call CacheHandler.deleteFromCache(rqp)
+        '''
         if self.__option == 'ADD':
             self.cacher.cacheResponses()
         elif self.__option == 'DEL':
