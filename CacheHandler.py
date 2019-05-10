@@ -641,11 +641,10 @@ class CacheThread(threading.Thread):
     def __init__(self, option, rqp, rsps):
         threading.Thread.__init__(self)
         self.__option = option
-        self.__rqp = rqp
-        self.__rsps = rsps
+        self.cacher = CacheHandler(rqp, rsps)
 
     def run(self):
         if self.__option == 'ADD':
-            CacheHandler.cacheResponses(self.__rqp, self.__rsps)
+            self.cacher.cacheResponses()
         elif self.__option == 'DEL':
-            CacheHandler.deleteFromCache(self.__rqp)
+            self.cacher.deleteFromCache()
