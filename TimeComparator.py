@@ -4,32 +4,15 @@ class TimeComparator:
     '''
     do time comparison of format in http(s) packets
     format: Sat, 30 Mar 2019 12:30:18 GMT
-
-    Members:
-
-        time:                   datetime object
-
-    Constructor:
-
-        default:
-            time:               pass in a string time, will convert to datetime object
-                                (note that the format is guaranteed by HTTP protocol)
-
-            dt:                 pass in a datetime object directly
-
-        currentTime:            returns an object with current time in GMT
-
-    Methods:
-
-        toString():             print time
-
-        __gt__(other):          compare 2 TimeComparator object
-
-        __add__(secondStr):     returns a new object with time incremented by secondStr
-
     '''
 
     def __init__(self, timeStr = 0, dt = 0):
+        '''
+        __time:     pass in a string time, will convert to datetime object
+                    (note that the format is guaranteed by HTTP protocol)
+
+        __dt:       pass in a datetime object directly
+        '''
         if dt == 0:
             if timeStr == 0:
                 raise Exception('TimeComparator parameter cannot be empty')
@@ -38,6 +21,9 @@ class TimeComparator:
 
     @classmethod
     def currentTime(cls):
+        '''
+        returns an object with current time in GMT
+        '''
         currTime = datetime.datetime.utcnow()
         obj = cls(dt=currTime)
         return obj
@@ -50,8 +36,9 @@ class TimeComparator:
 
 
     def __add__(self, secondStr):
-        # tc += 'time in second'
-        # format: Sat, 30 Mar 2019 12:30:18 GMT
+        '''
+        returns a new object with time incremented by secondStr
+        '''
         time = self.__time + datetime.timedelta(seconds=int(secondStr))
         obj = TimeComparator(dt=time)
         return obj
