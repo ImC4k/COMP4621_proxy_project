@@ -1,3 +1,7 @@
+'''
+provide prime number related functions
+'''
+
 def factorize(number):
     factors = []
     for i in range(1, number + 1):
