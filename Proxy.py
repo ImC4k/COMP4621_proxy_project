@@ -44,11 +44,18 @@ class Proxy:
 
     '''
 
-    MAX_CONNECTION = 500 # number of simultaneous connections supported
+    MAX_CONNECTION = None # number of simultaneous connections supported
     freeIndexArr = []
     connectionThreads = []
 
-    def __init__(self, port=6298):
+    def __init__(self, max_connection=None, port=None):
+        if max_connection is None:
+            max_connection = 200
+        if port is None:
+            port = 6298
+        print('Proxy:: config: max_connection=' + str(max_connection) + ', port=' + str(port))
+
+        Proxy.MAX_CONNECTION = max_connection
         self.proxyAddr = '0.0.0.0' # support all IP
         self.proxyPort = port
         self.welcomeSocket = socket(AF_INET, SOCK_STREAM)
