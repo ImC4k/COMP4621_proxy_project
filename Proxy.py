@@ -45,7 +45,7 @@ class Proxy:
 
     '''
 
-    MAX_CONNECTION = 50 # number of simultaneous connections supported
+    MAX_CONNECTION = 200 # number of simultaneous connections supported
     freeIndexArr = []
     connectionThreads = []
 
