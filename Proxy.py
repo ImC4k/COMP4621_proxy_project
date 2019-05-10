@@ -15,34 +15,6 @@ class Proxy:
     open welcoming socket
     allocate and return socket
     create thread connections
-
-    Members:
-
-        MAX_CONNECTION:                 (static) number of simultaneous connections supported
-
-        freeIndexArr:                   (static) array of flags marking which index position of connectionThreads are available
-
-        connectionThreads:              (static) array storing the connection threads
-
-        proxyAddr:                      address of this proxy server
-
-        proxyPort:                      port number of this proxy server
-
-        welcomeSocket:                  welcoming socket object
-
-    Constructor:
-
-        __init__(port=6298):            init members, defualt port is 6298
-
-    Functions:
-
-        getFreeIndex():                 loop through freeIndexArr to get a free spot for next client connection
-
-        setFreeIndex(idx, flag):        param: (idx : uint, flag : bool)
-                                        set freeIndexArr[idx] to flag
-
-        listenConnection:               start listening to proxyPort, accept connections
-
     '''
 
     MAX_CONNECTION = None # number of simultaneous connections supported
@@ -50,6 +22,27 @@ class Proxy:
     connectionThreads = []
 
     def __init__(self, max_connection=None, port=None):
+        '''
+        default max_connection: 200
+        default port number: 6298
+
+        initialize welcoming socket, freeIndexArr, connectionThreads array,
+        configure CacheHandler hashed locks
+
+        MAX_CONNECTION:         @static
+
+        freeIndexArr:           @static
+                                array of flags marking which index position of connectionThreads are available
+
+        connectionThreads:      @static
+                                array storing the connection threads
+
+        proxyAddr:              IP reachable
+
+        proxyPort:
+
+        welcomingSocket:
+        '''
         if max_connection is None:
             max_connection = 200
         if port is None:
@@ -70,6 +63,9 @@ class Proxy:
         print('Proxy:: server starts')
 
     def getFreeIndex(self):
+        '''
+        loop through freeIndexArr to get a free spot for next client connection
+        '''
         for i in range(Proxy.MAX_CONNECTION):
             if Proxy.freeIndexArr[i] == True:
                 print('Proxy:: getFreeIndex: index ' + str(i) + ' is free')
@@ -78,11 +74,23 @@ class Proxy:
 
     @staticmethod
     def setFreeIndex(idx, flag):
+        '''
+        set freeIndexArr[idx] to flag
+        '''
         Proxy.freeIndexArr[idx] = flag
         if Proxy.freeIndexArr[idx] == True: # confirm freed
             print('Proxy:: setFreeIndex: index ' + str(idx) + ' is free')
 
     def listenConnection(self):
+        '''
+        start listening to proxyPort, accept connections
+        reject connections if exceeding MAX_CONNECTION
+
+        on key interrupt:
+            close connections,
+            join all threads,
+            write cache lookup table to file
+        '''
         while True:
             try:
                 clientSideSocket, addr = self.welcomeSocket.accept()
@@ -134,22 +142,6 @@ class ConnectionThread(threading.Thread):
     '''
     this class must be imported by Proxy module
     thread object for clients to make connections
-
-    Members:
-
-        socketHandler:              socketHandler object for the client
-
-        idx:                        index this thread is assigned to, in Proxy.connectionThreads
-
-    Constructor:
-
-        default:                    construct superclass,
-                                    initialize members
-
-    Functions:
-
-        run():                      start socketHandler
-                                    when finish, set Proxy.freeIndexArr[idx] to be free (True)
     '''
 
     def __init__(self, socket, idx):
@@ -158,6 +150,10 @@ class ConnectionThread(threading.Thread):
         self.idx = idx
 
     def run(self):
+        '''
+        start socketHandler
+        when finish, set Proxy.freeIndexArr[idx] to be free (True)
+        '''
         print('ConnectionThread:: thread id: ' + str(self.idx) + ' starting')
         self.socketHandler.handleRequest()
         print('ConnectionThread:: thread id: ' + str(self.idx) + ' ending')
