@@ -91,7 +91,8 @@ class CacheHandler:
         delete entries with all 0s in encoding
         delete directories with no files, using DFS
         '''
-        CacheHandler.deleteUnusedPaths(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
+        if os.path.isdir(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory):
+            CacheHandler.deleteUnusedPaths(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
         CacheHandler.purgeLookupTable()
         CacheHandler.writeLookupTableToFile()
 
@@ -212,7 +213,7 @@ class CacheHandler:
             self.holdingLookupTableLock = False
 
             encoding = self.rsps[0].getHeaderInfo('content-encoding')
-            expiry = self.__getExpiry()
+            expiry = self.__getExpiry(cacheOptionSplitted)
 
             self.__createDirectories(cacheFileNameSplitted)
 
@@ -248,7 +249,7 @@ class CacheHandler:
             CacheHandler.lookupTableLock.acquire() # add file operation, make sure lookup table is not modified
             self.holdingLookupTableLock = True
             try:
-                CacheHandler.__updateLookup('ADD', cacheFileNameFH, encoding, numFiles=index, expiry=expiry)
+                self.__updateLookup('ADD', cacheFileNameFH, encoding, numFiles=index, expiry=expiry)
             except Exception as e:
                 CacheHandler.lookupTableLock.release()
                 self.holdingLookupTableLock = False
@@ -264,7 +265,7 @@ class CacheHandler:
 
     def fetchResponses(self): # fetch all related responses, return list of response packets (not raw)
         if self.rqp.getMethod().lower() == 'get':
-            cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH() # cache response file name first half, splitted is useless here
+            cacheFileNameFH, cacheFileNameSplitted = self.__getCacheFileNameFH() # cache response file name first half, splitted is useless here
 
             CacheHandler.lookupTableLock.acquire()
             self.holdingLookupTableLock = True
@@ -363,14 +364,14 @@ class CacheHandler:
             return (None, None)
 
     def deleteFromCache(self, releaseLookupTableLock=True): # get number of files cached, delete them all
-        cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH() # cache response file name first half, splitted is useless here
+        cacheFileNameFH, cacheFileNameSplitted = self.__getCacheFileNameFH() # cache response file name first half, splitted is useless here
 
         if not self.holdingLookupTableLock:
             CacheHandler.lookupTableLock.acquire()
             self.holdingLookupTableLock = True
             releaseLookupTableLock = True
 
-        idx = CacheHandler.__entryExists(cacheFileNameFH, releaseLookupTableLock=False)
+        idx = self.__entryExists(cacheFileNameFH, releaseLookupTableLock=False)
         if idx == -1:
             if releaseLookupTableLock:
                 CacheHandler.lookupTableLock.release()
@@ -410,7 +411,7 @@ class CacheHandler:
                 CacheHandler.lookupTableLock.acquire()
                 self.holdingLookupTableLock = True
 
-            CacheHandler.__updateLookup('DEL', cacheFileNameFH) # delete entire entry, because all encodings are deleted
+            self.__updateLookup('DEL', cacheFileNameFH) # delete entire entry, because all encodings are deleted
 
             if releaseLookupTableLock:
                 CacheHandler.lookupTableLock.release()
@@ -418,8 +419,7 @@ class CacheHandler:
         except Exception as e:
             raise e
 
-    @staticmethod
-    def __updateLookup(method, cacheFileNameFH, encoding='', numFiles=1, expiry='nil', releaseLookupTableLock=True):
+    def __updateLookup(self, method, cacheFileNameFH, encoding='', numFiles=1, expiry='nil', releaseLookupTableLock=True):
         '''
         ADD: add record/ entry to lookup table
         DEL: delete record/ entry from lookup table, ignores encoding, numFiles
@@ -432,7 +432,7 @@ class CacheHandler:
         if CacheHandler.origin is None: # unlikely
             CacheHandler.origin = os.getcwd()
 
-        idx = CacheHandler.__entryExists(cacheFileNameFH, releaseLookupTableLock=False)
+        idx = self.__entryExists(cacheFileNameFH, releaseLookupTableLock=False)
 
 
         if method == 'ADD':
@@ -525,7 +525,7 @@ class CacheHandler:
             cacheFileNameFH += subpart + '/'
         return cacheFileNameFH[:-1], cacheFileNameSplitted
 
-    def __getExpiry(self):
+    def __getExpiry(self, cacheOptionSplitted):
         expiry = 'nil' # default expiration is nil
 
         for option in cacheOptionSplitted:
@@ -597,9 +597,9 @@ class CacheHandler:
 
         if CacheHandler.lookupTable is None:
             try:
-                with open('cache_lookup_table.json', 'w') as table:
+                with open('cache_lookup_table.json', 'r') as table:
                     CacheHandler.lookupTable = json.load(table)
-            except FileNotFoundError as e:
+            except Exception as e:
                 CacheHandler.lookupTable = []
 
         if releaseLookupTableLock:
