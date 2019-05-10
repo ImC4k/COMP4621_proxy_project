@@ -167,7 +167,7 @@ class CacheHandler:
             print('CacheHandler:: writeLookupTableToFile: failed to write lookup table to file, lookup table is None')
         CacheHandler.lookupTableLock.release()
 
-    def __init__(self, rqp=None, rsps=None):
+    def __init__(self, rqp, rsps=None):
         self.holdingLookupTableLock = False
         self.holdingChdirLock = False
         self.holdingHashedLock = -1
@@ -180,6 +180,12 @@ class CacheHandler:
         cache response whenever no-store, private are not specified in cache-control
         because all cached response will be revalidated by proxy anyway
         '''
+        if self.rsps is None:
+            print('CacheHandler::cacheResponses: rsps should have been provided')
+            print('-------------------------')
+            print('CacheHandler:: not cached')
+            print('-------------------------')
+            return
 
         cacheOption = self.rsps[0].getHeaderInfo('cache-control').lower()
         cacheOptionSplitted = cacheOption.split(',')
@@ -256,9 +262,9 @@ class CacheHandler:
             print('CacheHandler:: not cached')
             print('-------------------------')
 
-    def fetchResponses(self, rqp): # fetch all related responses, return list of response packets (not raw)
-        if rqp.getMethod().lower() == 'get':
-            cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
+    def fetchResponses(self): # fetch all related responses, return list of response packets (not raw)
+        if self.rqp.getMethod().lower() == 'get':
+            cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH() # cache response file name first half, splitted is useless here
 
             CacheHandler.lookupTableLock.acquire()
             self.holdingLookupTableLock = True
@@ -281,7 +287,7 @@ class CacheHandler:
             expiry = entry['expiry']
             print('CacheHandler:: fetchResponses: expiry: ' + expiry)
 
-            encodings = rqp.getHeaderInfo('accept-encoding')
+            encodings = self.rqp.getHeaderInfo('accept-encoding')
             if encodings == 'nil':
                 encodings = ['*']
             encodingsSplitted = encodings.split(',')
@@ -357,7 +363,7 @@ class CacheHandler:
             return (None, None)
 
     def deleteFromCache(self, releaseLookupTableLock=True): # get number of files cached, delete them all
-        cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH(rqp) # cache response file name first half, splitted is useless here
+        cacheFileNameFH, cacheFileNameSplitted = CacheHandler.__getCacheFileNameFH() # cache response file name first half, splitted is useless here
 
         if not self.holdingLookupTableLock:
             CacheHandler.lookupTableLock.acquire()
@@ -508,10 +514,10 @@ class CacheHandler:
         }
         return object
 
-    def __getCacheFileNameFH(self, rqp):
-        cacheFileNameSplitted = [rqp.getHostName()]
-        if rqp.getFilePath() != '/':
-            filePathSplitted = rqp.getFilePath()[1:].split('/')
+    def __getCacheFileNameFH(self):
+        cacheFileNameSplitted = [self.rqp.getHostName()]
+        if self.rqp.getFilePath() != '/':
+            filePathSplitted = self.rqp.getFilePath()[1:].split('/')
             for subPath in filePathSplitted:
                 cacheFileNameSplitted.append(subPath)
         cacheFileNameFH = ''

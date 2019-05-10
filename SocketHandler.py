@@ -136,7 +136,8 @@ class SocketHandler:
                 self.closeConnection()
                 return
             elif rqp.getMethod().lower() == 'get':
-                fetchedResponses, expiry = CacheHandler.fetchResponses(rqp)
+                fetcher = CacheHandler(rqp=rqp)
+                fetchedResponses, expiry = fetcher.fetchResponses()
 
                 if fetchedResponses is None: # no cache found PATH A
                     try:
@@ -354,7 +355,7 @@ class SocketHandler:
         responseRaw = self.serverSideSocket.recv(SocketHandler.BUFFER_SIZE) # blocking, should receive data
         if responseRaw is None:
             return []
-        
+
         rsp = ResponsePacket.parsePacket(responseRaw) # Assumption first received packet should have a header
         rsps.append(rsp)
 
