@@ -85,11 +85,75 @@ class CacheHandler:
 
     @staticmethod
     def exitRoutine():
-        pass
+        '''
+        called by Proxy
+        clean up lookup table and write to file
+        delete entries with all 0s in encoding
+        delete directories with no files, using DFS
+        '''
+        CacheHandler.deleteUnusedPaths(CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory)
+        CacheHandler.purgeLookupTable()
+        CacheHandler.writeLookupTableToFile()
+
+    @staticmethod
+    def deleteUnusedPaths(origin, releaseChdirLock=True):
+        '''
+        called by exitRoutine()
+        recursively delete directories that contains 0 file
+        ie the previously stored cache has already been deleted,
+        so there is no need to keep that directory
+        implemented using DFS, should be replaceable by os.removedirs()
+        '''
+
+        if CacheHandler.origin == '':
+            CacheHandler.origin = os.getcwd()
+
+        if releaseChdirLock: # lock needs to be acquired
+            CacheHandler.chdirLock.acquire()
+
+        for d in os.listdir(origin):
+            if os.path.isdir(d):
+                os.chdir(d)
+                deleteUnusedPaths(os.getcwd(), releaseChdirLock=False)
+                os.chdir('..')
+                if len(os.listdir(d)) == 0:
+                    os.rmdir(d)
+
+        if releaseChdirLock:
+            CacheHandler.chdirLock.release()
+
+    @staticmethod
+    def purgeLookupTable():
+        '''
+        called by exitRoutine()
+        if an entry doesn't have any file stored (all entry[encoding] == 0),
+        then remove the entry to save space
+        '''
+        CacheHandler.lookupTableLock.acquire()
+
+        if CacheHandler.lookupTable is None or len(CacheHandler.lookupTable) == 0:
+            CacheHandler.lookupTableLock.release()
+            return
+
+        purgedTable = []
+        for entry in CacheHandler.lookupTable:
+            entryFound = False
+            for encoding in entry:
+                if encoding == 'cacheFileNameFH' or encoding == 'expiry': # this is not an encoding key-value pair, continue
+                    continue
+                elif entry[encoding] != 0:
+                    entryFound = True
+                    break
+            if entryFound:
+                purgedTable.append(entry)
+        CacheHandler.lookupTable = purgedTable
+
+        CacheHandler.lookupTableLock.release()
 
     @staticmethod
     def writeLookupTableToFile():
         '''
+        called by exitRoutine()
         when proxy program quits, write the lookup table back to cache_lookup_table.json
         '''
         if CacheHandler.origin == '':
@@ -97,7 +161,7 @@ class CacheHandler:
 
         CacheHandler.lookupTableLock.acquire()
         if CacheHandler.lookupTable is not None: # directly access instead of calling __getLookupTable
-            with open(CacheHandler.origin + '/cache_lookup_table.json', 'w') as table: # write new lookup table
+            with open(CacheHandler.origin + '/' + 'cache_lookup_table.json', 'w') as table: # write new lookup table
                 json.dump(CacheHandler.lookupTable, table, indent=4)
         else:
             print('CacheHandler:: writeLookupTableToFile: failed to write lookup table to file, lookup table is None')
@@ -377,10 +441,10 @@ class CacheHandler:
                         CacheHandler.lookupTableLock.release()
                         releaseLookupTableLock = False
                     raise e
-                CacheHandler.__getLookupTable().append(newEntry)
+                self.__getLookupTable().append(newEntry)
             else: # entry found
                 try:
-                    entry = CacheHandler.__getLookupTable()[idx]
+                    entry = self.__getLookupTable()[idx]
                     entry.update({encoding : numFiles})
                     if expiry != 'nil':
                         entry[idx].update({'expiry' : expiry})
@@ -419,7 +483,7 @@ class CacheHandler:
             CacheHandler.lookupTableLock.acquire()
             self.holdingLookupTableLock = True
 
-        entries = CacheHandler.__getLookupTable()
+        entries = self.__getLookupTable()
 
         if releaseLookupTableLock:
             CacheHandler.lookupTableLock.release()
