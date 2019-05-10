@@ -197,6 +197,8 @@ class SocketHandler:
                                 print('-------------')
                                 print('| PATH BBAB |')
                                 print('-------------')
+                                ct = CacheThread('DEL', rqp, None)
+                                ct.start()
                                 try:
                                     rsps = self.__handleRequestSubroutine(rqp)
                                 except Exception as e:
@@ -356,8 +358,11 @@ class SocketHandler:
         if responseRaw is None:
             return []
 
-        rsp = ResponsePacket.parsePacket(responseRaw) # Assumption first received packet should have a header
-        rsps.append(rsp)
+        try:
+            rsp = ResponsePacket.parsePacket(responseRaw) # Assumption first received packet should have a header
+            rsps.append(rsp)
+        except Exception as e:
+            return []
 
         expectedLength = rsp.getHeaderInfo('content-length')
         receivedLength = len(rsp.getPayload())
