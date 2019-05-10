@@ -1,8 +1,11 @@
 class RequestPacket:
     '''
     process request packet
-
-    Members:
+    '''
+    def __init__(self):
+        '''
+        this should not be called directly
+        instead, should use p = RequestPacket.parsePacket(packet)
 
         __requestLine:                              request line, first line of the header
 
@@ -15,53 +18,6 @@ class RequestPacket:
         __method:                                   stores the method of the request packet
 
         __connection:                               Keep-Alive or Close
-
-    Constructors:
-
-        default:                                    does nothing
-
-        parsePacket(packetRaw):                     takes entire raw packet, auto separation, fix url and initialize members
-
-    Functions:
-
-        setHeaderSplitted(headerSplitted):          set splitted packet data (header fields only)
-
-        setRequestLine(requestLine):                set request line data
-
-        setPayload(payload):                        set payload data
-
-        fixRequestLine():                           replace url with file path
-
-        getFilePath():                              get the path of file from url eg returns '/image1.png' from 'http://www.ust.hk/image1.png'
-
-        modifyTime(time):                           change the if-modified-since field to ${time}
-
-        getHostName():                              returns server host name
-
-        getMethod():                                returns method used in the request packet
-
-        getConnection():                            returns connection info eg keep-alive, close
-
-        getHeaderInfo(fieldName):                   param: (fieldName : string)
-                                                    (update) returns value of fieldName
-
-        getVersion():                               eg HTTP/1.1
-
-        getPacket(option=''):                       returns reformed packet option 'DEBUG' to omit printing payload
-
-        getPacketRaw():                             returns raw (encoded) packet data
-
-        getRequestLine():                           returns string request line
-
-        getHeaderSplitted():                        returns list of string header fields
-
-        getPayload():                               returns payload
-
-    '''
-    def __init__(self):
-        '''
-        this should not be called directly
-        instead, should use p = RequestPacket.parsePacket(packet)
         '''
         self.__requestLine = ''
         self.__filePath = ''
@@ -73,6 +29,9 @@ class RequestPacket:
 
     @classmethod
     def parsePacket(cls, packetRaw):
+        '''
+        takes entire raw packet, auto separation, fix url and initialize members
+        '''
         print('\n\n')
         rp = RequestPacket()
 
@@ -121,6 +80,7 @@ class RequestPacket:
 
     def fixRequestLine(self):
         '''
+        replace url with file path
         edit 2nd field to correct filePath
         '''
         requestLineSplitted = self.__requestLine.split(' ')
@@ -132,6 +92,7 @@ class RequestPacket:
 
     def getFilePath(self):
         '''
+        get the path of file from url eg returns '/image1.png' from 'http://www.ust.hk/image1.png'
         assumed incoming packet is HTTP ie 2nd field starts with http://
         '''
         if self.__filePath == '':
@@ -147,6 +108,9 @@ class RequestPacket:
             return self.__filePath
 
     def modifyTime(self, time):
+        '''
+        change the if-modified-since field to ${time}
+        '''
         index = -1 # line index where header field key is 'if-modified-since'
         for idx in range(len(self.__headerSplitted)):
             if self.__headerSplitted[idx][0:len('if-modified-since')].lower() == 'if-modified-since':
@@ -173,6 +137,9 @@ class RequestPacket:
         return self.__method
 
     def getConnection(self):
+        '''
+        returns connection info eg keep-alive, close
+        '''
         if self.__connection == '':
             connectionLine = ''
             for ss in self.__headerSplitted:
@@ -184,6 +151,9 @@ class RequestPacket:
         return self.__connection
 
     def getHeaderInfo(self, fieldName):
+        '''
+        returns value of fieldName
+        '''
         line = ''
         for ss in self.__headerSplitted:
             if ss[0:len(fieldName)].lower() == fieldName:
