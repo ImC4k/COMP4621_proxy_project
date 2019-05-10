@@ -392,7 +392,7 @@ class CacheHandler:
 
             fileHash = self.__getFileHash(cacheFileNameFH)
             CacheHandler.hashedLocks[fileHash].acquire()
-            self.holdingHashedLock = filehash
+            self.holdingHashedLock = fileHash
 
             for i in range(1, int(numFiles) + 1):
                 cacheFileName = CacheHandler.origin + '/' + CacheHandler.cacheFileDirectory + cacheFileNameFH + ', ' + encoding + ', ' + str(i)
@@ -453,7 +453,7 @@ class CacheHandler:
                     entry = self.__getLookupTable()[idx]
                     entry.update({encoding : numFiles})
                     if expiry != 'nil':
-                        entry[idx].update({'expiry' : expiry})
+                        entry.update({'expiry' : expiry})
                     CacheHandler.lookupTable[idx] = entry
                 except Exception as e:
                     if releaseLookupTableLock:
