@@ -21,56 +21,10 @@ import threading
 class SocketHandler:
     '''
     responsible for
+        access control
         receiving client request, sending out request to server,
         receiving server response, sending out response to client
-
-    Members:
-
-        BUFFER_SIZE:                    (static) maximum buffer size to receive/ send packet
-
-        HTTPS_PORT:                     (static) port number for HTTPS protocol
-
-        HTTP_PORT:                      (static) port number for HTTP protocol
-
-        socket:                         socket information
-
-        timeout:                        boolean, true if timer ends
-
-        timeoutThreadID:                if thread with this ID timeout, close this connection
-
-        maxTransmission:                number of transmissions this connection can handle (default 100)
-
-        isFirstResponse:                true if first response packet, set maxTransmission, connectionType
-
-        timerThreadRunning:             a flag to close all timer thread attached to this socket handler
-
-    Constructor:
-
-        __init__(socket, callback):     when handleRequest() returns (connection closes),
-                                        call callback function
-
-    Methods:
-
-        handleRequest():                called by listen(),
-                                        handle incoming client request,
-                                        make request to server by requestToServer(),
-                                        return response to client
-
-        requestToServer(rqp):           param: (rqp : RequestPacket)
-                                        connect to server,
-                                        receive response from server,
-                                        append as list
-                                        (will not close server side socket)
-                                        return response packets list, server side socket
-
-        establishHTTPSConnection(rqp):  param: (rqp : RequestPacket)
-                                        use HTTPS connection instead of HTTP
-                                        no caching, timeout etc, direct forwarding after CONNECT method
-
-        onBlackList(rqp):               returns true is the request website is on access control (blocked by me)
-
-        setTimeout(id):                 if id matches timeoutThreadID, set timeout be True
-
+        determining cache options
     '''
 
     BUFFER_SIZE = 8192 # 8KB
@@ -79,6 +33,34 @@ class SocketHandler:
     BANNED_SITES = None
 
     def __init__(self, socket):
+        '''
+        initialize members
+
+        BUFFER_SIZE:            @static
+                                maximum buffer size to receive/ send packet
+
+        HTTPS_PORT:             @static
+                                port number for HTTPS protocol
+
+        HTTP_PORT:              @static
+                                port number for HTTP protocol
+
+        __socket:               socket to client
+
+        __timeout:              boolean, true if timer ends
+
+        __timeoutThreadID:      if thread with this ID timeout, close this connection
+
+        __maxTransmission:      number of transmissions this connection can handle (default 100)
+
+        __isFirstResponse:      true if first response packet, set maxTransmission, connectionType
+
+        __ThreadRunning:        a flag to close all timer thread attached to this socket handler
+
+        serverSideSocket:       socket to server
+
+        serverAddr:             server address
+        '''
         self.__socket = socket
         self.__timeout = False
         self.__timeoutThreadID = -1
@@ -91,6 +73,15 @@ class SocketHandler:
         print('SocketHandler:: Socket handler initialized')
 
     def handleRequest(self):
+        '''
+        called by Proxy::listenConnection(),
+        main routine for proxy
+        check access
+        handle incoming client request,
+        make request to server by requestToServer(),
+        check cache
+        return respond to client
+        '''
         while not self.__timeout and self.__maxTransmission > 0:
             try:
                 requestRaw = self.__socket.recv(SocketHandler.BUFFER_SIZE) #, MSG_DONTWAIT
@@ -271,6 +262,14 @@ class SocketHandler:
 
 
     def __handleRequestSubroutine(self, rqp, _304responses=''):
+        '''
+        make request to server,
+        switch responseCode:
+            200: cache and return
+            304: return
+            404: delete cache and return
+            else: return
+        '''
         try:
             rsps = self.requestToServer(rqp)
         except Exception as e:
@@ -322,6 +321,12 @@ class SocketHandler:
 
 
     def requestToServer(self, rqp):
+        '''
+        connect to server,
+        receive response from server,
+        append as list
+        return (response packets list, server side socket)
+        '''
         rsps = [] # responses to be returned
 
         try:
@@ -405,6 +410,9 @@ class SocketHandler:
         return rsps
 
     def __respondToClient(self, rsps):
+        '''
+        send response to client
+        '''
         for rsp in rsps:
             try:
                 self.__socket.send(rsp.getPacketRaw())
@@ -428,7 +436,10 @@ class SocketHandler:
                 raise e
 
     def establishHTTPSConnection(self, rqp):
-
+        '''
+        use HTTPS connection instead of HTTP
+        no caching, timeout etc, direct forwarding after CONNECT method
+        '''
         try:
             tempHost = rqp.getHostName().split(':')
             tempServerAddr = gethostbyname(tempHost[0])
@@ -506,6 +517,9 @@ class SocketHandler:
                 raise e
 
     def onBlackList(self, rqp):
+        '''
+        returns true if the request website is on access control (blocked by me)
+        '''
         if SocketHandler.BANNED_SITES is None: # create banned sites if no file found
             try:
                 with open('banned_sites', 'r') as banned_sites_file:
@@ -536,10 +550,17 @@ class SocketHandler:
         return False
 
     def setTimeout(self, id):
+        '''
+        time thread id tries to set timeout
+        if id matches with __timeoutThreadID, then set it
+        '''
         if self.__timeoutThreadID == id:
             self.__timeout = True
 
     def closeConnection(self):
+        '''
+        disable all threads, stop receiving and forwarding data
+        '''
         self.__threadRunning.clear()
         self.__timeout = True
 
