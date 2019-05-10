@@ -584,27 +584,18 @@ class TimerThread(threading.Thread):
     '''
     timer thread for proxy-to-client connection
     when timer ends, try to set timeout for the caller
-
-    Members:
-
-        __id:                        id this thread is assigned to
-
-        __time:                       seconds the timer should set to
-
-        __socketHandler:            the caller of this thread
-
-    Constructor:
-
-        default:                    construct superclass,
-                                    initialize members
-
-    Functions:
-
-        run():                      start timer
-                                    when finish, set connectionThread.timeout = True
     '''
 
     def __init__(self, id, time, socketHandler, isRunning):
+        '''
+        __id:                       id this thread is assigned to
+
+        __time:                     seconds the timer should set to
+
+        __socketHandler:            the caller of this thread
+
+        __isRunning:                the event object from SocketHandler
+        '''
         threading.Thread.__init__(self)
         self.__id = id
         self.__time = time
@@ -612,6 +603,10 @@ class TimerThread(threading.Thread):
         self.__isRunning = isRunning
 
     def run(self):
+        '''
+        start timer
+        when finish, set connectionThread.timeout = True
+        '''
         sleepCount = 0
         while sleepCount != self.__time and self.__isRunning.is_set():
             sleep(1)
