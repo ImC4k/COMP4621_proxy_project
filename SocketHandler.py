@@ -141,7 +141,7 @@ class SocketHandler:
                         ct = CacheThread('ADD', rqp, rsps)
                         ct.start()
                     else: # PATH A
-
+                        pass
                     self.__respondToClient(rsps)
 
                 else: # cache response found PATH B
