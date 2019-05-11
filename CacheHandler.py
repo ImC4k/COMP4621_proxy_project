@@ -124,8 +124,6 @@ class CacheHandler:
         if CacheHandler.lookupTable is not None: # directly access instead of calling __getLookupTable
             with open(CacheHandler.origin + '/' + 'cache_lookup_table.json', 'w') as table: # write new lookup table
                 json.dump(CacheHandler.lookupTable, table, indent=4)
-        else:
-            print('CacheHandler:: writeLookupTableToFile: failed to write lookup table to file, lookup table is None')
         CacheHandler.lookupTableLock.release()
 
     def __init__(self, rqp, rsps=None):
@@ -178,17 +176,12 @@ class CacheHandler:
         because all cached response will be revalidated by proxy anyway
         '''
         if self.rsps is None:
-            print('CacheHandler::cacheResponses: rsps should have been provided')
-            print('-------------------------')
-            print('CacheHandler:: not cached')
-            print('-------------------------')
             return
 
         cacheOption = self.rsps[0].getHeaderInfo('cache-control').lower()
         cacheOptionSplitted = cacheOption.split(',')
         for i in range(len(cacheOptionSplitted)):
             cacheOptionSplitted[i] = cacheOptionSplitted[i].strip()
-        print('CacheHandler:: cacheResponses: cacheOptionSplitted: ' + str(cacheOptionSplitted))
 
         if 'no-store' not in cacheOptionSplitted and 'private' not in cacheOptionSplitted: # specified as public or the header field is not present
             cacheFileNameFH, cacheFileNameSplitted = self.__getCacheFileNameFH() # cache response file name first half
@@ -229,7 +222,6 @@ class CacheHandler:
                             cacheFile.write(rsp)
                         except OSError as e:
                             print(e)
-                            print('CacheHandler:: cacheResponses(): fail to cache file')
                 except Exception as e:
                     CacheHandler.lookupTableLock.release()
                     self.holdingLookupTableLock = False
@@ -238,9 +230,6 @@ class CacheHandler:
                     self.holdingHashedLock = -1
 
                     raise e
-            print('---------------------------------------------------------------')
-            print('CacheHandler:: cacheResponse(): file(s) are cached')
-            print('---------------------------------------------------------------')
 
             CacheHandler.lookupTableLock.acquire() # add file operation, make sure lookup table is not modified
             self.holdingLookupTableLock = True
@@ -253,11 +242,6 @@ class CacheHandler:
 
             CacheHandler.hashedLocks[fileHash].release()
             self.holdingHashedLock = -1
-
-        else: # do not cache response
-            print('-------------------------')
-            print('CacheHandler:: not cached')
-            print('-------------------------')
 
     def fetchResponses(self): # fetch all related responses, return list of response packets (not raw)
         '''
@@ -281,10 +265,6 @@ class CacheHandler:
 
             CacheHandler.lookupTableLock.release()
             self.holdingLookupTableLock = False
-
-            print('-----------------------------------')
-            print('CacheHandler:: cache response found')
-            print('-----------------------------------')
 
             expiry = entry['expiry']
             print('CacheHandler:: fetchResponses: expiry: ' + expiry)
@@ -326,14 +306,10 @@ class CacheHandler:
                             CacheHandler.hashedLocks[fileHash].release()
                             self.holdingHashedLock = -1
 
-                            print('----------------------------------------')
-                            print('CacheHandler:: returning cache response:')
-                            print('----------------------------------------')
                             return (rsps, expiry)
                     raise Exception('could not find entry that should be present')
 
                 if entry[encoding] != 0: # encoding specified is not '*'
-                    print('CacheHandler:: fetchResponses: found matching encoding: ' + encoding)
                     numFiles = int(entry[encoding])
                     rsps = []
 
@@ -356,9 +332,6 @@ class CacheHandler:
 
                     CacheHandler.hashedLocks[fileHash].release()
                     self.holdingHashedLock = -1
-                    print('----------------------------------------')
-                    print('CacheHandler:: returning cache response:')
-                    print('----------------------------------------')
                     return (rsps, expiry)
             return (None, None)
         else: # fetching from cache only applies to GET method
@@ -404,7 +377,6 @@ class CacheHandler:
                 try:
                     os.remove(cacheFileName)
                 except Exception as e:
-                    print('CacheHandler:: deleteFromCache: FH: ' + cacheFileNameFH)
                     CacheHandler.hashedLocks[fileHash].release()
                     self.holdingHashedLock = -1
                     raise Exception('CacheHandler:: deleteFromCache: lookup table and data mismatch -> Corruption detected')
@@ -555,10 +527,8 @@ class CacheHandler:
                 responseDate = self.rsps[0].getHeaderInfo('date')
                 if responseDate == 'nil': # date of retrieval not specified
                     expiry = (TimeComparator.currentTime() + secondStr).toString() # use current time
-                    print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                 else:
                     expiry = (TimeComparator(responseDate) + secondStr).toString()
-                    print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                 break
 
         for option in cacheOptionSplitted: # overwrite expiry from max-age with s-maxage
@@ -567,10 +537,8 @@ class CacheHandler:
                 responseDate = self.rsps[0].getHeaderInfo('date')
                 if responseDate == 'nil':
                     expiry = (TimeComparator.currentTime() + secondStr).toString()
-                    print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                 else:
                     expiry = (TimeComparator(responseDate) + secondStr).toString()
-                    print('CacheHandler:: cacheResponses: expiry: ' + expiry)
                 break
 
         for option in cacheOptionSplitted: # don't do anything on expiry if must revalidate
