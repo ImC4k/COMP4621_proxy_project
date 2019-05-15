@@ -269,7 +269,7 @@ class SocketHandler:
             tempHost = rqp.getHostName().split(':')
             tempServerAddr = gethostbyname(tempHost[0])
         except Exception as e:
-            print('SocketHandler:: requestToServer: failed to obtain ip for host server')
+            print('SocketHandler:: requestToServer: failed to obtain ip for host server: ' + tempHost[0])
             return []
         if len(tempHost) == 2:
             serverPort = int(tempHost[1])
@@ -346,17 +346,24 @@ class SocketHandler:
             try:
                 self.__socket.send(rsp.getPacketRaw())
             except BrokenPipeError as e:
+                # print('exception: SocketHandler:: __respondToClient: BrokenPipeError')
                 if self.serverSideSocket is not None:
                     self.serverSideSocket.close()
             except AttributeError as e:
                 try:
                     self.__socket.send(rsp)
                 except BrokenPipeError as e:
+                    # print('exception: SocketHandler:: __respondToClient: AttributeError: BrokenPipeError')
                     if self.serverSideSocket is not None:
                         self.serverSideSocket.close()
+                except OSError as e:
+                    # print('exception: SocketHandler:: __respondToClient: AttributeError: OSError')
+                    print('rsp not sent to client')
                 except Exception as e:
+                    # print('exception: SocketHandler:: __respondToClient: AttributeError: Exception')
                     raise e
             except Exception as e:
+                # print('exception: SocketHandler:: __respondToClient: Exception')
                 raise e
 
     def establishHTTPSConnection(self, rqp):
