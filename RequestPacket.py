@@ -146,6 +146,9 @@ class RequestPacket:
                 if ss[0:len('connection')].lower() == 'connection':
                     connectionLine = ss
                     break
+            if connectionLine == '':
+                self.__connection = 'nil'
+                return self.__connection
             connectionLineSplitted = connectionLine.split(' ')
             self.__connection = connectionLineSplitted[1]
         return self.__connection
