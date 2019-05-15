@@ -107,6 +107,7 @@ class Proxy:
                     print('Proxy:: connection closed')
 
             except KeyboardInterrupt:
+                self.welcomeSocket.close()
                 for i in range(Proxy.MAX_CONNECTION): # call close connection, dont wait for child processes here
                     if not Proxy.freeIndexArr[i]:
                         Proxy.connectionThreads[i].closeConnection()
