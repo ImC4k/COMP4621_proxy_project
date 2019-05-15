@@ -125,6 +125,7 @@ class CacheHandler:
             with open(CacheHandler.origin + '/' + 'cache_lookup_table.json', 'w') as table: # write new lookup table
                 json.dump(CacheHandler.lookupTable, table, indent=4)
         CacheHandler.lookupTableLock.release()
+        print('cache table written to file')
 
     def __init__(self, rqp, rsps=None):
         '''

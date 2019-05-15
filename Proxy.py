@@ -111,7 +111,7 @@ class Proxy:
                 for i in range(Proxy.MAX_CONNECTION): # call close connection, dont wait for child processes here
                     if not Proxy.freeIndexArr[i]:
                         Proxy.connectionThreads[i].closeConnection()
-
+                CacheHandler.writeLookupTableToFile()
                 for i in range(Proxy.MAX_CONNECTION): # wait for all child processes
                     if not Proxy.freeIndexArr[i]:
                         Proxy.connectionThreads[i].join()
