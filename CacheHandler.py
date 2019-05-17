@@ -332,7 +332,8 @@ class CacheHandler:
                             self.holdingHashedLock = -1
                             # raise Exception('could not find entry that should be present')
                             print('could not find entry that should be present')
-                            raise e
+                            return (None, None)
+                            # raise e
 
                     CacheHandler.hashedLocks[fileHash].release()
                     self.holdingHashedLock = -1
