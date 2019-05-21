@@ -34,7 +34,6 @@ class TimeComparator:
     def __gt__(self, other):
         return self.__time > other.__time
 
-
     def __add__(self, secondStr):
         '''
         returns a new object with time incremented by secondStr

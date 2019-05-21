@@ -173,7 +173,6 @@ class RequestPacket:
             if ss[0:len('HTTP')].lower() == 'http':
                 return ss
 
-
     def getPacket(self, option=''):
         s = ''
         s += self.__requestLine + '\r\n'
